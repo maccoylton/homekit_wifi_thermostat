@@ -6,8 +6,8 @@ connection between the thermostat and the switch, hence it's called wifi thermos
 accessory and your central heating device is wireless.
 
 It uses a DH22 to sense the temperature and sets the current_heating_cooling_status based on the other settings of the 
-accessory. It sensd events as the value changes, which can then be acrioned by triggers using the Eve app.
+accessory. It sends events as the value changes, which can then be actioned by triggers using the Eve app.
 
-For example when the thermostat set the current_heatting_cooling_status to heat/off, use Eve to trigger the switch accesory 
+For example when the thermostat sets the current_heating_cooling_status to heat/off, use Eve to trigger the switch accesory 
 to on/off respectively. You can also set timer based events in Eve to control the target_heating_cooling_status, in other 
 words you can create a program of when you want the heating to go on or off. 
