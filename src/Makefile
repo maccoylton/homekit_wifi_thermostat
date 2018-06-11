@@ -1,11 +1,12 @@
-PROGRAM = thermostat
+PROGRAM = main
 
 EXTRA_COMPONENTS = \
 	extras/dht \
 	extras/http-parser \
-	$(abspath ../../components/wolfssl) \
-	$(abspath ../../components/cJSON) \
-	$(abspath ../../components/homekit)
+	extras/rboot-ota \
+	$(abspath ../components/esp-wolfssl) \
+	$(abspath ../components/esp-cjson) \
+	$(abspath ../components/esp-homekit)
 
 FLASH_SIZE ?= 32
 
