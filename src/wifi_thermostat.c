@@ -13,12 +13,18 @@
  * limitations under the License.
  *
  * 
- * WIF Thermostat 
+ * EPS8266 HomeKit WIFI Thermostat 
  *
  * Uses a DHT22 (temperature sensor)
  *
  *
  */
+
+#define DEVICE_MANUFACTURER "David B Brown"
+#define DEVICE_NAME "Wifi Thermostat"
+#define DEVICE_MODEL "Basic"
+#define DEVICE_SERIAL "12345678"
+#define FW_VERSION "1.0"
 
 #include <stdio.h>
 #include <espressif/esp_wifi.h>
@@ -47,10 +53,11 @@
 
 #include "ota-api.h"
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
-homekit_characteristic_t manufacturer = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  "DBB");
-homekit_characteristic_t serial       = HOMEKIT_CHARACTERISTIC_(SERIAL_NUMBER, "1");
-homekit_characteristic_t model        = HOMEKIT_CHARACTERISTIC_(MODEL,         "thermostat");
-homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION,  "0.0.1");
+homekit_characteristic_t name         = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
+homekit_characteristic_t manufacturer = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  DEVICE_MANUFACTURER);
+homekit_characteristic_t serial       = HOMEKIT_CHARACTERISTIC_(SERIAL_NUMBER, DEVICE_SERIAL);
+homekit_characteristic_t model        = HOMEKIT_CHARACTERISTIC_(MODEL,         DEVICE_MODEL);
+homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION,  FW_VERSION);
 
 
 void thermostat_identify(homekit_value_t _value) {
@@ -139,7 +146,7 @@ void thermostat_init() {
 homekit_accessory_t *accessories[] = {
     HOMEKIT_ACCESSORY(.id=1, .category=homekit_accessory_category_thermostat, .services=(homekit_service_t*[]) {
         HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics=(homekit_characteristic_t*[]) {
-            HOMEKIT_CHARACTERISTIC(NAME, "Thermostat"),
+            &name,
             &manufacturer,
             &serial,
             &model,
@@ -165,6 +172,36 @@ homekit_accessory_t *accessories[] = {
     NULL
 };
 
+
+
+void create_accessory_name() {
+
+    int serialLength = snprintf(NULL, 0, "%d", sdk_system_get_chip_id());
+
+    char *serialNumberValue = malloc(serialLength + 1);
+
+    snprintf(serialNumberValue, serialLength + 1, "%d", sdk_system_get_chip_id());
+    
+    int name_len = snprintf(NULL, 0, "%s-%s-%s",
+				DEVICE_NAME,
+				DEVICE_MODEL,
+				serialNumberValue);
+
+    if (name_len > 63) {
+        name_len = 63;
+    }
+
+    char *name_value = malloc(name_len + 1);
+
+    snprintf(name_value, name_len + 1, "%s-%s-%s",
+		 DEVICE_NAME, DEVICE_MODEL, serialNumberValue);
+
+   
+    name.value = HOMEKIT_STRING(name_value);
+    serial.value = name.value;
+}
+
+
 homekit_server_config_t config = {
     .accessories = accessories,
     .password = "111-11-111"
@@ -174,6 +211,8 @@ void user_init(void) {
     uart_set_baud(0, 115200);
 
 //    wifi_init();
+    create_accessory_name(); 
+
     thermostat_init();
 
     int c_hash=ota_read_sysparam(&manufacturer.value.string_value,&serial.value.string_value,
