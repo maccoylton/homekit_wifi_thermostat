@@ -21,7 +21,7 @@
  */
 
 #define DEVICE_MANUFACTURER "David B Brown"
-#define DEVICE_NAME "Wifi Thermostat"
+#define DEVICE_NAME "Wifi-Thermostat"
 #define DEVICE_MODEL "Basic"
 #define DEVICE_SERIAL "12345678"
 #define FW_VERSION "1.0"
@@ -37,12 +37,15 @@
 #include <FreeRTOS.h>
 #include <task.h>
 
+#include <ssd1306/ssd1306.h>
+
 #include <homekit/homekit.h>
 #include <homekit/characteristics.h>
 //#include "wifi.h"
 
 #include <dht/dht.h>
 
+#include "wifi_thermostat.h"
 
 #define TEMPERATURE_SENSOR_PIN 4
 #define TEMPERATURE_POLL_PERIOD 10000
@@ -50,6 +53,60 @@
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
 // it can be used in Eve, which will show it, where Home does not
 // and apply the four other parameters in the accessories_information section
+
+
+
+/// I2C
+
+/* Remove this line if your display connected by SPI */
+#define I2C_CONNECTION
+
+#ifdef I2C_CONNECTION
+    #include <i2c/i2c.h>
+#endif
+
+#include "fonts/fonts.h"
+
+/* Change this according to you schematics and display size */
+#define DISPLAY_WIDTH  128
+#define DISPLAY_HEIGHT 64
+
+#ifdef I2C_CONNECTION
+    #define PROTOCOL SSD1306_PROTO_I2C
+    #define ADDR     SSD1306_I2C_ADDR_0
+    #define I2C_BUS  0
+    #define SCL_PIN  14
+    #define SDA_PIN  5
+#else
+    #define PROTOCOL SSD1306_PROTO_SPI4
+    #define CS_PIN   5
+    #define DC_PIN   4
+#endif
+
+#define DEFAULT_FONT FONT_FACE_TERMINUS_16X32_ISO8859_1
+
+/* Declare device descriptor */
+static const ssd1306_t dev = {
+    .protocol = PROTOCOL,
+#ifdef I2C_CONNECTION
+.i2c_dev.bus      = I2C_BUS,
+.i2c_dev.addr     = ADDR,
+#else
+    .cs_pin   = CS_PIN,
+    .dc_pin   = DC_PIN,
+#endif
+    .width    = DISPLAY_WIDTH,
+    .height   = DISPLAY_HEIGHT
+};
+
+/* Local frame buffer */
+static uint8_t buffer[DISPLAY_WIDTH * DISPLAY_HEIGHT / 8];
+
+#define SECOND (1000 / portTICK_PERIOD_MS)
+
+// I2C
+
+
 
 #include "ota-api.h"
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
@@ -80,11 +137,117 @@ homekit_characteristic_t current_humidity    = HOMEKIT_CHARACTERISTIC_( CURRENT_
 
 
 
+// LCD ssd1306 
+
+static void ssd1306_task(void *pvParameters)
+{
+    char target_temp_string[20];
+    char mode_string[20];
+    char temperature_string[20];
+    char humidity_string[20];
+    int count =0;
+
+
+    vTaskDelay(SECOND);
+    ssd1306_set_whole_display_lighting(&dev, false);
+
+    ssd1306_load_xbm(&dev, homekit_logo, buffer);
+    if (ssd1306_load_frame_buffer(&dev, buffer))
+            goto error_loop;
+    vTaskDelay(SECOND*5);
+
+    ssd1306_clear_screen(&dev);
+
+    while (1) {
+        if (ssd1306_fill_rectangle(&dev, buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
+		printf("Error printing rectangle\bn");
+	}
+
+
+        sprintf(target_temp_string, "Target: %g", (float)target_temperature.value.float_value);
+        sprintf(mode_string, "Mode: %i", (int)current_state.value.int_value);
+//	ssd1306_draw_string(&dev, buffer, font_builtin_fonts[0], 0, 0, "Hello", OLED_COLOR_WHITE, OLED_COLOR_BLACK)
+
+
+
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[0], 0, 30, target_temp_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+            printf("Error printing target temp\n");
+	}
+
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[0], 0, 45, mode_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1 ){
+            printf("Error printing mode\n");
+	}
+
+        sprintf(temperature_string, "Temperature: %g", (float)current_temperature.value.float_value);
+        sprintf(humidity_string, "Humidity: %g", (float)current_humidity.value.float_value);
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[0], 0, 0, temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+            printf("Error printing temperature\n");
+	}
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[0], 0, 15, humidity_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+            printf("Error printing humidity\n");
+	}
+
+	count ++;
+	if (count == 60){
+
+		count = 0;
+
+                ssd1306_clear_screen(&dev);
+		ssd1306_load_xbm(&dev, homekit_logo, buffer);
+    		if (ssd1306_load_frame_buffer(&dev, buffer))
+            		goto error_loop;
+    		vTaskDelay(SECOND*5);
+    		ssd1306_clear_screen(&dev);
+	}
+
+		
+        if (ssd1306_load_frame_buffer(&dev, buffer))
+            goto error_loop;
+        
+        vTaskDelay(SECOND);
+
+
+    }
+
+    error_loop:
+        printf("%s: error while loading framebuffer into SSD1306\n", __func__);
+        for (;;) {
+            vTaskDelay(2 * SECOND);
+            printf("%s: error loop\n", __FUNCTION__);
+        }
+}
+
+
+void screen_init(void)
+{
+    //uncomment to test with CPU overclocked
+    //sdk_system_update_cpu_freq(160);
+
+
+    printf("Screen Init SDK version:%s\n", sdk_system_get_sdk_version());
+
+#ifdef I2C_CONNECTION
+    i2c_init(I2C_BUS, SCL_PIN, SDA_PIN, I2C_FREQ_400K);
+#endif
+
+    while (ssd1306_init(&dev) != 0) {
+        printf("%s: failed to init SSD1306 lcd\n", __func__);
+        vTaskDelay(SECOND);
+    }
+    ssd1306_set_whole_display_lighting(&dev, true);
+
+    xTaskCreate(ssd1306_task, "ssd1306_task", 512, NULL, 2, NULL);
+
+}
+
+// LCD ssd1306
+
 void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *context) {
     process_setting_update();
 }
 
 void process_setting_update() {
+
     uint8_t state = target_state.value.int_value;
     if ((state == 1 && current_temperature.value.float_value < target_temperature.value.float_value) ||
             (state == 3 && current_temperature.value.float_value < heating_threshold.value.float_value)) {
@@ -130,6 +293,7 @@ void temperature_sensor_task(void *_args) {
             homekit_characteristic_notify(&current_humidity, current_humidity.value);
 
             process_setting_update();
+
         } else {
             printf("Couldnt read data from sensor\n");
         }
@@ -215,6 +379,10 @@ void user_init(void) {
 
     thermostat_init();
 
+    printf ("Calling screen init\n");
+    printf ("fonts count %i\n", font_builtin_fonts_count);
+    screen_init();
+    printf ("Screen init called\n");
     int c_hash=ota_read_sysparam(&manufacturer.value.string_value,&serial.value.string_value,
                                       &model.value.string_value,&revision.value.string_value);
     if (c_hash==0) c_hash=1;
