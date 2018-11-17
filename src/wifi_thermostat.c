@@ -46,9 +46,13 @@
 #include <dht/dht.h>
 
 #include "wifi_thermostat.h"
+#include "button.h"
 
 #define TEMPERATURE_SENSOR_PIN 4
 #define TEMPERATURE_POLL_PERIOD 10000
+#define BUTTON_UP_GPIO 12
+#define BUTTON_DOWN_GPIO 13
+
 // add this section to make your device OTA capable
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
 // it can be used in Eve, which will show it, where Home does not
@@ -246,6 +250,44 @@ void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *contex
     process_setting_update();
 }
 
+
+void button_up_callback(uint8_t gpio, button_event_t event) {
+    switch (event) {
+        case button_event_single_press:
+            printf("Button UP\n");
+	    target_temperature.value.float_value += 0.5;
+            homekit_characteristic_notify(&target_temperature, target_temperature.value);
+            break;
+        case button_event_long_press:
+            printf("Button UP\n");
+            target_temperature.value.float_value += 1;
+            homekit_characteristic_notify(&target_temperature, target_temperature.value);
+            break;
+        default:
+            printf("Unknown button event: %d\n", event);
+    }
+}
+
+
+void button_down_callback(uint8_t gpio, button_event_t event) {
+    switch (event) {
+        case button_event_single_press:
+            printf("Button DOWN\n");
+            target_temperature.value.float_value -= 0.5;
+            homekit_characteristic_notify(&target_temperature, target_temperature.value);
+            break;
+        case button_event_long_press:
+            printf("Button UP\n");
+            target_temperature.value.float_value -= 1;
+            homekit_characteristic_notify(&target_temperature, target_temperature.value);
+            break;
+        default:
+            printf("Unknown button event: %d\n", event);
+    }
+}
+
+
+
 void process_setting_update() {
 
     uint8_t state = target_state.value.int_value;
@@ -303,7 +345,17 @@ void temperature_sensor_task(void *_args) {
 }
 
 void thermostat_init() {
+
     xTaskCreate(temperature_sensor_task, "Thermostat", 256, NULL, 2, NULL);
+    gpio_enable(BUTTON_UP_GPIO, GPIO_INPUT);
+    gpio_enable(BUTTON_DOWN_GPIO, GPIO_INPUT);
+    if (button_create(BUTTON_UP_GPIO, 0, 4000, button_up_callback)) {
+        printf("Failed to initialize button Up\n");
+    }
+
+   if (button_create(BUTTON_DOWN_GPIO, 0, 4000, button_down_callback)) {
+        printf("Failed to initialize button down\n");
+    }
 }
 
 
