@@ -69,8 +69,6 @@
     #include <i2c/i2c.h>
 #endif
 
-#define FONT_FACE_TERMINUS_BOLD_12X24_ISO8859_1 1
-#define FONT_FACE_TERMINUS_BOLD_10X18_ISO8859_1 2
 
 #include "fonts/fonts.h"
 
@@ -167,29 +165,52 @@ static void ssd1306_task(void *pvParameters)
     ssd1306_clear_screen(&dev);
 
     while (1) {
-        if (ssd1306_fill_rectangle(&dev, buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
-		printf("Error printing rectangle\bn");
+        if (count==0){
+		if (ssd1306_fill_rectangle(&dev, buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
+			printf("Error printing rectangle\bn");
+		}
+
+        	ssd1306_load_xbm(&dev, thermostat_xbm, buffer);
+        	if (ssd1306_load_frame_buffer(&dev, buffer))
+            		goto error_loop;
 	}
 
-
         sprintf(target_temp_string, "%g", (float)target_temperature.value.float_value);
-        sprintf(mode_string, "%i", (int)current_state.value.int_value);
+	switch( (int)current_state.value.int_value)
+	{
+		case 0:
+			sprintf(mode_string, "OFF ");
+			break;
+		case 1:
+			sprintf(mode_string, "HEAT");
+			break;
+		case 2:
+			sprintf(mode_string, "COOL");
+			break;
+		case 3:
+			sprintf(mode_string, "AUTO");
+			break;
+		default:
+			sprintf(mode_string, "?   ");
+	}
+	
+//        sprintf(mode_string, "%i", (int)current_state.value.int_value);
 
 
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_12X24_ISO8859_1], 10, 21, target_temp_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 5, 2, target_temp_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
             printf("Error printing target temp\n");
 	}
 
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_12X24_ISO8859_1], 10, 85, mode_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1 ){
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 70, 2, mode_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1 ){
             printf("Error printing mode\n");
 	}
 
         sprintf(temperature_string, "%g", (float)current_temperature.value.float_value);
         sprintf(humidity_string, "%g", (float)current_humidity.value.float_value);
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_12X24_ISO8859_1], 43, 30, temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 30, 41 , temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
             printf("Error printing temperature\n");
 	}
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_12X24_ISO8859_1], 43, 94 , humidity_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 92, 41 , humidity_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
             printf("Error printing humidity\n");
 	}
 
@@ -197,6 +218,9 @@ static void ssd1306_task(void *pvParameters)
 	if (count == 60){
 
 		count = 0;
+        	if (ssd1306_fill_rectangle(&dev, buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
+                	printf("Error printing rectangle\bn");
+        	}
 
                 ssd1306_clear_screen(&dev);
 		ssd1306_load_xbm(&dev, homekit_logo, buffer);
