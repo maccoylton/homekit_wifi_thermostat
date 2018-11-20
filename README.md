@@ -11,3 +11,5 @@ accessory. It sends events as the value changes, which can then be actioned by t
 For example when the thermostat sets the current_heating_cooling_status to heat/off, use Eve to trigger the switch accesory 
 to on/off respectively. You can also set timer based events in Eve to control the target_heating_cooling_status, in other 
 words you can create a program of when you want the heating to go on or off. 
+
+Now updated to include and screen (SSD1306 OLED) and buttons to adjust up and down the target temperature. 
