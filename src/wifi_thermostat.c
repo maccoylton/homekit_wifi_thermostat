@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright 2018 David B Brown (@maccoylton)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -144,7 +144,6 @@ void thermostat_identify(homekit_value_t _value) {
 void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *context);
 void process_setting_update();
 
-
 homekit_characteristic_t current_temperature = HOMEKIT_CHARACTERISTIC_( CURRENT_TEMPERATURE, 0 );
 homekit_characteristic_t target_temperature  = HOMEKIT_CHARACTERISTIC_( TARGET_TEMPERATURE, 22, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(on_update));
 homekit_characteristic_t units               = HOMEKIT_CHARACTERISTIC_( TEMPERATURE_DISPLAY_UNITS, 0 );
@@ -287,6 +286,7 @@ void screen_init(void)
 // LCD ssd1306
 
 void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *context) {
+    save_characteristic_to_flash (ch, value);
     process_setting_update();
 }
 
@@ -296,11 +296,13 @@ void button_up_callback(uint8_t gpio, button_event_t event) {
         case button_event_single_press:
             printf("Button UP\n");
 	    target_temperature.value.float_value += 0.5;
+            save_characteristic_to_flash (&target_temperature, target_temperature.value);
             homekit_characteristic_notify(&target_temperature, target_temperature.value);
             break;
         case button_event_long_press:
             printf("Button UP\n");
             target_temperature.value.float_value += 1;
+            save_characteristic_to_flash (&target_temperature, target_temperature.value);
             homekit_characteristic_notify(&target_temperature, target_temperature.value);
             break;
         default:
@@ -314,18 +316,19 @@ void button_down_callback(uint8_t gpio, button_event_t event) {
         case button_event_single_press:
             printf("Button DOWN\n");
             target_temperature.value.float_value -= 0.5;
+            save_characteristic_to_flash (&target_temperature, target_temperature.value);
             homekit_characteristic_notify(&target_temperature, target_temperature.value);
             break;
         case button_event_long_press:
             printf("Button UP\n");
             target_temperature.value.float_value -= 1;
+            save_characteristic_to_flash (&target_temperature, target_temperature.value);
             homekit_characteristic_notify(&target_temperature, target_temperature.value);
             break;
         default:
             printf("Unknown button event: %d\n", event);
     }
 }
-
 
 
 void process_setting_update() {
@@ -335,6 +338,7 @@ void process_setting_update() {
             (state == 3 && current_temperature.value.float_value < heating_threshold.value.float_value)) {
         if (current_state.value.int_value != 1) {
             current_state.value = HOMEKIT_UINT8(1);
+            save_characteristic_to_flash (&current_state, current_state.value);
             homekit_characteristic_notify(&current_state, current_state.value);
 
         }
@@ -342,14 +346,14 @@ void process_setting_update() {
             (state == 3 && current_temperature.value.float_value > cooling_threshold.value.float_value)) {
         if (current_state.value.int_value != 2) {
             current_state.value = HOMEKIT_UINT8(2);
+            save_characteristic_to_flash (&current_state, current_state.value);
             homekit_characteristic_notify(&current_state, current_state.value);
-
         }
     } else {
         if (current_state.value.int_value != 0) {
             current_state.value = HOMEKIT_UINT8(0);
+            save_characteristic_to_flash (&current_state, current_state.value);
             homekit_characteristic_notify(&current_state, current_state.value);
-
         }
     }
 }
@@ -528,7 +532,7 @@ void load_settings_from_flash (){
 
     printf("load_settings_from_flash - load setting from flash\n");
     load_characteristic_from_flash (&target_state);
-    
+    load_characteristic_from_flash (&target_temperature);    
 }
 
 homekit_server_config_t config = {
@@ -559,4 +563,5 @@ void user_init(void) {
 
     homekit_server_init(&config);
 }
+
 
