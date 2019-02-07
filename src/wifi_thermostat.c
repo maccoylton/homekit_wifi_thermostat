@@ -36,6 +36,7 @@
 #include <esplibs/libmain.h>
 #include <FreeRTOS.h>
 #include <task.h>
+#include <sysparam.h>
 
 #include <ssd1306/ssd1306.h>
 
@@ -46,12 +47,17 @@
 #include <dht/dht.h>
 
 #include "wifi_thermostat.h"
-#include "button.h"
+#include <button.h>
+#include <led_codes.h>
+#include <custom_characteristics.h>
 
 #define TEMPERATURE_SENSOR_PIN 4
 #define TEMPERATURE_POLL_PERIOD 10000
 #define BUTTON_UP_GPIO 12
 #define BUTTON_DOWN_GPIO 13
+#define BUTTON_RESET 0 
+#define LED_GPIO 2
+
 
 // add this section to make your device OTA capable
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
@@ -114,7 +120,7 @@ static uint8_t buffer[DISPLAY_WIDTH * DISPLAY_HEIGHT / 8];
 
 
 
-#include "ota-api.h"
+#include <ota-api.h>
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
 homekit_characteristic_t name         = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
 homekit_characteristic_t manufacturer = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  DEVICE_MANUFACTURER);
@@ -122,9 +128,16 @@ homekit_characteristic_t serial       = HOMEKIT_CHARACTERISTIC_(SERIAL_NUMBER, D
 homekit_characteristic_t model        = HOMEKIT_CHARACTERISTIC_(MODEL,         DEVICE_MODEL);
 homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION,  FW_VERSION);
 
+void identify_task(void *_args) {
+
+    led_code(LED_GPIO, IDENTIFY_ACCESSORY);
+
+    vTaskDelete(NULL);
+}
 
 void thermostat_identify(homekit_value_t _value) {
     printf("Thermostat identify\n");
+    xTaskCreate(identify_task, "identify", 128, NULL, 2, NULL);
 }
 
 
@@ -244,6 +257,7 @@ static void ssd1306_task(void *pvParameters)
         for (;;) {
             vTaskDelay(2 * SECOND);
             printf("%s: error loop\n", __FUNCTION__);
+	    led_code(LED_GPIO, FUNCTION_A);
         }
 }
 
@@ -364,23 +378,10 @@ void temperature_sensor_task(void *_args) {
 
         } else {
             printf("Couldnt read data from sensor\n");
+	    led_code(LED_GPIO, SENSOR_ERROR);
         }
         homekit_characteristic_notify(&current_state, current_state.value);
         vTaskDelay(TEMPERATURE_POLL_PERIOD / portTICK_PERIOD_MS);
-    }
-}
-
-void thermostat_init() {
-
-    xTaskCreate(temperature_sensor_task, "Thermostat", 256, NULL, 2, NULL);
-    gpio_enable(BUTTON_UP_GPIO, GPIO_INPUT);
-    gpio_enable(BUTTON_DOWN_GPIO, GPIO_INPUT);
-    if (button_create(BUTTON_UP_GPIO, 0, 4000, button_up_callback)) {
-        printf("Failed to initialize button Up\n");
-    }
-
-   if (button_create(BUTTON_DOWN_GPIO, 0, 4000, button_down_callback)) {
-        printf("Failed to initialize button down\n");
     }
 }
 
@@ -414,7 +415,69 @@ homekit_accessory_t *accessories[] = {
     NULL
 };
 
+void reset_configuration_task() {
 
+    led_code(LED_GPIO, WIFI_CONFIG_RESET);
+
+//    printf("Resetting Wifi Config\n");
+
+//    wifi_config_reset();
+
+//    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    printf("Resetting HomeKit Config\n");
+
+    homekit_server_reset();
+
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    printf("Restarting\n");
+
+    sdk_system_restart();
+
+    vTaskDelete(NULL);
+}
+
+void reset_configuration() {
+    printf("Resetting Sonoff configuration\n");
+    xTaskCreate(reset_configuration_task, "Reset configuration", 256, NULL, 2, NULL);
+}
+
+
+void reset_button_callback(uint8_t gpio, button_event_t event) {
+    switch (event) {
+        case button_event_single_press:
+            printf("Button event: %d, doing nothin\n", event);
+            break;
+        case button_event_long_press:
+            printf("Button event: %d, resetting homekit config\n", event);
+            reset_configuration();
+            break;
+        default:
+            printf("Unknown button event: %d\n", event);
+    }
+}
+
+void thermostat_init() {
+
+    xTaskCreate(temperature_sensor_task, "Thermostat", 256, NULL, 2, NULL);
+    gpio_enable(BUTTON_UP_GPIO, GPIO_INPUT);
+    gpio_enable(BUTTON_DOWN_GPIO, GPIO_INPUT);
+    gpio_enable(BUTTON_RESET, GPIO_INPUT);
+    gpio_enable(LED_GPIO, GPIO_OUTPUT);
+    if (button_create(BUTTON_UP_GPIO, 0, 4000, button_up_callback)) {
+        printf("Failed to initialize button Up\n");
+    }
+
+   if (button_create(BUTTON_DOWN_GPIO, 0, 4000, button_down_callback)) {
+        printf("Failed to initialize button down\n");
+    }
+
+    if (button_create(BUTTON_RESET, 0, 4000, reset_button_callback)) {
+        printf("Failed to initialize button\n");
+    }
+
+}
 
 void create_accessory_name() {
 
@@ -443,6 +506,30 @@ void create_accessory_name() {
     serial.value = name.value;
 }
 
+void get_sysparam_info() {
+    uint32_t base_addr,num_sectors;
+    sysparam_iter_t sysparam_iter;
+    sysparam_status_t sysparam_status;
+    
+    sysparam_get_info(&base_addr, &num_sectors);
+
+    printf ("get_sysparam_info - Sysparam base address %i, num_sectors %i\n", base_addr, num_sectors);
+    sysparam_status = sysparam_iter_start (&sysparam_iter);
+    while (sysparam_status==0){
+        sysparam_status = sysparam_iter_next (&sysparam_iter);
+        if (sysparam_status==0){
+            printf("get_sysparam_info - sysparam name: %s\n", sysparam_iter.key);
+        }
+    }
+    sysparam_iter_end (&sysparam_iter);
+}
+
+void load_settings_from_flash (){
+
+    printf("load_settings_from_flash - load setting from flash\n");
+    load_characteristic_from_flash (&target_state);
+    
+}
 
 homekit_server_config_t config = {
     .accessories = accessories,
@@ -453,6 +540,10 @@ void user_init(void) {
     uart_set_baud(0, 115200);
 
 //    wifi_init();
+
+    get_sysparam_info ();
+    load_settings_from_flash ();
+
     create_accessory_name(); 
 
     thermostat_init();

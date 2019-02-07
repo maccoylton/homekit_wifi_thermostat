@@ -9,7 +9,11 @@ EXTRA_COMPONENTS = \
 	extras/i2c \
 	$(abspath ../components/esp-wolfssl) \
 	$(abspath ../components/esp-cjson) \
-	$(abspath ../components/esp-homekit)
+	$(abspath ../components/esp-homekit)\
+	$(abspath ../libs/button)\
+	$(abspath ../libs/led_codes)\
+	$(abspath ../libs/ota)\
+	$(abspath ../libs/custom_characteristics)
 
 FONTS_TERMINUS_BOLD_8X14_ISO8859_1 = 1
 FONTS_TERMINUS_BOLD_14X28_ISO8859_1 = 1
