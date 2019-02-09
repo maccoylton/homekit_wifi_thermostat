@@ -12,4 +12,4 @@ For example when the thermostat sets the current_heating_cooling_status to heat/
 to on/off respectively. You can also set timer based events in Eve to control the target_heating_cooling_status, in other 
 words you can create a program of when you want the heating to go on or off. 
 
-Now updated to include and screen (SSD1306 OLED) and buttons to adjust up and down the target temperature. 
+Now updated to include a screen (SSD1306 OLED) and buttons to adjust up and down the target temperature. 
