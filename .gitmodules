@@ -7,3 +7,6 @@
 [submodule "components/esp-wolfssl"]
 	path = components/esp-wolfssl
 	url = https://github.com/maximkulkin/esp-wolfssl.git
+[submodule "components/esp-homekit-common-functions"]
+	path = components/esp-homekit-common-functions
+	url = https://github.com/maccoylton/esp-homekit-common-functions
