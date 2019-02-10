@@ -510,29 +510,11 @@ void create_accessory_name() {
     serial.value = name.value;
 }
 
-void get_sysparam_info() {
-    uint32_t base_addr,num_sectors;
-    sysparam_iter_t sysparam_iter;
-    sysparam_status_t sysparam_status;
-    
-    sysparam_get_info(&base_addr, &num_sectors);
-
-    printf ("get_sysparam_info - Sysparam base address %i, num_sectors %i\n", base_addr, num_sectors);
-    sysparam_status = sysparam_iter_start (&sysparam_iter);
-    while (sysparam_status==0){
-        sysparam_status = sysparam_iter_next (&sysparam_iter);
-        if (sysparam_status==0){
-            printf("get_sysparam_info - sysparam name: %s\n", sysparam_iter.key);
-        }
-    }
-    sysparam_iter_end (&sysparam_iter);
-}
-
 void load_settings_from_flash (){
-
+    
     printf("load_settings_from_flash - load setting from flash\n");
     load_characteristic_from_flash (&target_state);
-    load_characteristic_from_flash (&target_temperature);    
+    load_characteristic_from_flash (&target_temperature);
 }
 
 homekit_server_config_t config = {
