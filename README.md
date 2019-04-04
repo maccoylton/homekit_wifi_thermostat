@@ -16,10 +16,17 @@ Now updated to include a screen (SSD1306 OLED) and buttons to adjust up and down
 
 
 GPIO used are as follows:- 
+
   4 - DH22
+
   12 - Temperature
+
   13 - Temperature
+  
   0 - Reset
+  
   2 - LED 
+  
   14 - SSD1306 SCL_PIN
+  
   5 - SSD1306 SDA_PIN
