@@ -42,6 +42,7 @@
 
 #include <homekit/homekit.h>
 #include <homekit/characteristics.h>
+#include <qrcode.h>
 //#include "wifi.h"
 
 #include <dht/dht.h>
@@ -57,6 +58,7 @@
 #define BUTTON_DOWN_GPIO 13
 #define BUTTON_RESET 0 
 #define LED_GPIO 2
+#define QRCODE_VERSION 2
 
 
 // add this section to make your device OTA capable
@@ -98,7 +100,7 @@
 
 
 /* Declare device descriptor */
-static const ssd1306_t dev = {
+static const ssd1306_t display = {
     .protocol = PROTOCOL,
 #ifdef I2C_CONNECTION
 .i2c_dev.bus      = I2C_BUS,
@@ -111,8 +113,8 @@ static const ssd1306_t dev = {
     .height   = DISPLAY_HEIGHT
 };
 
-/* Local frame buffer */
-static uint8_t buffer[DISPLAY_WIDTH * DISPLAY_HEIGHT / 8];
+/* Local frame display_buffer */
+static uint8_t display_buffer[DISPLAY_WIDTH * DISPLAY_HEIGHT / 8];
 
 #define SECOND (1000 / portTICK_PERIOD_MS)
 
@@ -164,100 +166,100 @@ static void ssd1306_task(void *pvParameters)
     char temperature_string[20];
     char humidity_string[20];
     int count =0;
-
-
+    
+    
     vTaskDelay(SECOND);
-    ssd1306_set_whole_display_lighting(&dev, false);
-
-    ssd1306_load_xbm(&dev, homekit_logo, buffer);
-    if (ssd1306_load_frame_buffer(&dev, buffer))
-            goto error_loop;
+    ssd1306_set_whole_display_lighting(&display, false);
+    
+    ssd1306_load_xbm(&display, homekit_logo, display_buffer);
+    if (ssd1306_load_frame_buffer(&display, display_buffer))
+        goto error_loop;
     vTaskDelay(SECOND*5);
-
-    ssd1306_clear_screen(&dev);
-
+    
+    ssd1306_clear_screen(&display);
+    
     while (1) {
         if (count==0){
-		if (ssd1306_fill_rectangle(&dev, buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
-			printf("Error printing rectangle\bn");
-		}
-
-        	ssd1306_load_xbm(&dev, thermostat_xbm, buffer);
-        	if (ssd1306_load_frame_buffer(&dev, buffer))
-            		goto error_loop;
-	}
-
+            if (ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
+                printf("Error printing rectangle\bn");
+            }
+            
+            ssd1306_load_xbm(&display, thermostat_xbm, display_buffer);
+            if (ssd1306_load_frame_buffer(&display, display_buffer))
+                goto error_loop;
+        }
+        
         sprintf(target_temp_string, "%g", (float)target_temperature.value.float_value);
-	switch( (int)current_state.value.int_value)
-	{
-		case 0:
-			sprintf(mode_string, "OFF ");
-			break;
-		case 1:
-			sprintf(mode_string, "HEAT");
-			break;
-		case 2:
-			sprintf(mode_string, "COOL");
-			break;
-		case 3:
-			sprintf(mode_string, "AUTO");
-			break;
-		default:
-			sprintf(mode_string, "?   ");
-	}
-	
-//        sprintf(mode_string, "%i", (int)current_state.value.int_value);
-
-
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 5, 2, target_temp_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+        switch( (int)current_state.value.int_value)
+        {
+            case 0:
+                sprintf(mode_string, "OFF ");
+                break;
+            case 1:
+                sprintf(mode_string, "HEAT");
+                break;
+            case 2:
+                sprintf(mode_string, "COOL");
+                break;
+            case 3:
+                sprintf(mode_string, "AUTO");
+                break;
+            default:
+                sprintf(mode_string, "?   ");
+        }
+        
+        //        sprintf(mode_string, "%i", (int)current_state.value.int_value);
+        
+        
+        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 5, 2, target_temp_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
             printf("Error printing target temp\n");
-	}
-
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 70, 2, mode_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1 ){
+        }
+        
+        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 70, 2, mode_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1 ){
             printf("Error printing mode\n");
-	}
-
+        }
+        
         sprintf(temperature_string, "%g", (float)current_temperature.value.float_value);
         sprintf(humidity_string, "%g", (float)current_humidity.value.float_value);
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 30, 41 , temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 30, 41 , temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
             printf("Error printing temperature\n");
-	}
-        if (ssd1306_draw_string(&dev, buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 92, 41 , humidity_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+        }
+        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 92, 41 , humidity_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
             printf("Error printing humidity\n");
-	}
-
-	count ++;
-	if (count == 60){
-
-		count = 0;
-        	if (ssd1306_fill_rectangle(&dev, buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
-                	printf("Error printing rectangle\bn");
-        	}
-
-                ssd1306_clear_screen(&dev);
-		ssd1306_load_xbm(&dev, homekit_logo, buffer);
-    		if (ssd1306_load_frame_buffer(&dev, buffer))
-            		goto error_loop;
-    		vTaskDelay(SECOND*5);
-    		ssd1306_clear_screen(&dev);
-	}
-
-		
-        if (ssd1306_load_frame_buffer(&dev, buffer))
+        }
+        
+        count ++;
+        if (count == 60){
+            
+            count = 0;
+            if (ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
+                printf("Error printing rectangle\bn");
+            }
+            
+            ssd1306_clear_screen(&display);
+            ssd1306_load_xbm(&display, homekit_logo, display_buffer);
+            if (ssd1306_load_frame_buffer(&display, display_buffer))
+                goto error_loop;
+            vTaskDelay(SECOND*5);
+            ssd1306_clear_screen(&display);
+        }
+        
+        
+        if (ssd1306_load_frame_buffer(&display, display_buffer))
             goto error_loop;
         
         vTaskDelay(SECOND);
-
-
+        
+        
     }
-
-    error_loop:
-        printf("%s: error while loading framebuffer into SSD1306\n", __func__);
-        for (;;) {
-            vTaskDelay(2 * SECOND);
-            printf("%s: error loop\n", __FUNCTION__);
-	    led_code(LED_GPIO, FUNCTION_A);
-        }
+    
+error_loop:
+    printf("%s: error while loading framebuffer into SSD1306\n", __func__);
+    for (;;) {
+        vTaskDelay(2 * SECOND);
+        printf("%s: error loop\n", __FUNCTION__);
+        led_code(LED_GPIO, FUNCTION_A);
+    }
 }
 
 
@@ -273,17 +275,105 @@ void screen_init(void)
     i2c_init(I2C_BUS, SCL_PIN, SDA_PIN, I2C_FREQ_400K);
 #endif
 
-    while (ssd1306_init(&dev) != 0) {
+    while (ssd1306_init(&display) != 0) {
         printf("%s: failed to init SSD1306 lcd\n", __func__);
         vTaskDelay(SECOND);
     }
-    ssd1306_set_whole_display_lighting(&dev, true);
+    ssd1306_set_whole_display_lighting(&display, true);
 
     xTaskCreate(ssd1306_task, "ssd1306_task", 512, NULL, 2, NULL);
 
 }
 
 // LCD ssd1306
+
+
+
+// QR CODE
+void display_draw_pixel(uint8_t x, uint8_t y, bool white) {
+    ssd1306_color_t color = white ? OLED_COLOR_WHITE : OLED_COLOR_BLACK;
+    ssd1306_draw_pixel(&display, display_buffer, x, y, color);
+}
+
+void display_draw_pixel_2x2(uint8_t x, uint8_t y, bool white) {
+    ssd1306_color_t color = white ? OLED_COLOR_WHITE : OLED_COLOR_BLACK;
+    
+    ssd1306_draw_pixel(&display, display_buffer, x, y, color);
+    ssd1306_draw_pixel(&display, display_buffer, x+1, y, color);
+    ssd1306_draw_pixel(&display, display_buffer, x, y+1, color);
+    ssd1306_draw_pixel(&display, display_buffer, x+1, y+1, color);
+}
+
+void display_draw_qrcode(QRCode *qrcode, uint8_t x, uint8_t y, uint8_t size) {
+    void (*draw_pixel)(uint8_t x, uint8_t y, bool white) = display_draw_pixel;
+    if (size >= 2) {
+        draw_pixel = display_draw_pixel_2x2;
+    }
+    
+    uint8_t cx;
+    uint8_t cy = y;
+    
+    cx = x + size;
+    draw_pixel(x, cy, 1);
+    for (uint8_t i = 0; i < qrcode->size; i++, cx+=size)
+        draw_pixel(cx, cy, 1);
+    draw_pixel(cx, cy, 1);
+    
+    cy += size;
+    
+    for (uint8_t j = 0; j < qrcode->size; j++, cy+=size) {
+        cx = x + size;
+        draw_pixel(x, cy, 1);
+        for (uint8_t i = 0; i < qrcode->size; i++, cx+=size) {
+            draw_pixel(cx, cy, qrcode_getModule(qrcode, i, j)==0);
+        }
+        draw_pixel(cx, cy, 1);
+    }
+    
+    cx = x + size;
+    draw_pixel(x, cy, 1);
+    for (uint8_t i = 0; i < qrcode->size; i++, cx+=size)
+        draw_pixel(cx, cy, 1);
+    draw_pixel(cx, cy, 1);
+}
+
+bool qrcode_shown = false;
+void qrcode_show(homekit_server_config_t *config) {
+    char setupURI[20];
+    homekit_get_setup_uri(config, setupURI, sizeof(setupURI));
+    
+    QRCode qrcode;
+    
+    uint8_t *qrcodeBytes = malloc(qrcode_getBufferSize(QRCODE_VERSION));
+    qrcode_initText(&qrcode, qrcodeBytes, QRCODE_VERSION, ECC_MEDIUM, setupURI);
+    
+    qrcode_print(&qrcode);  // print on console
+    
+    ssd1306_display_on(&display, true);
+    
+    ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK);
+    ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[DEFAULT_FONT], 0, 26, config->password, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+    display_draw_qrcode(&qrcode, 64, 5, 2);
+    
+    ssd1306_load_frame_buffer(&display, display_buffer);
+    
+    free(qrcodeBytes);
+    qrcode_shown = true;
+}
+
+void qrcode_hide() {
+    if (!qrcode_shown)
+        return;
+    
+    ssd1306_clear_screen(&display);
+    ssd1306_display_on(&display, false);
+    
+    qrcode_shown = false;
+}
+
+
+// QR CODE END
+
 
 void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *context) {
     save_characteristic_to_flash (ch, value);
@@ -517,9 +607,19 @@ void load_settings_from_flash (){
     load_characteristic_from_flash (&target_temperature);
 }
 
+
+void on_homekit_event(homekit_event_t event) {
+    if (event == HOMEKIT_EVENT_PAIRING_ADDED) {
+        qrcode_hide();
+    } else if (event == HOMEKIT_EVENT_PAIRING_REMOVED) {
+        if (!homekit_is_paired())
+            sdk_system_restart();
+    }
+}
 homekit_server_config_t config = {
     .accessories = accessories,
-    .password = "111-11-111"
+    .password = "111-11-111",
+    .on_event = on_homekit_event
 };
 
 void user_init(void) {
@@ -542,7 +642,11 @@ void user_init(void) {
                                       &model.value.string_value,&revision.value.string_value);
     if (c_hash==0) c_hash=1;
         config.accessories[0]->config_number=c_hash;
-
+ 
+    if (!homekit_is_paired()) {
+        qrcode_show(&config);
+    }
+    
     homekit_server_init(&config);
 }
 
