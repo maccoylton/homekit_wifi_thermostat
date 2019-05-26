@@ -13,3 +13,6 @@
 [submodule "components/esp-qrcode"]
 	path = components/esp-qrcode
 	url = https://github.com/maximkulkin/esp-qrcode.git
+[submodule "components/esp-button"]
+	path = components/esp-button
+	url = https://github.com/maximkulkin/esp-button.git
