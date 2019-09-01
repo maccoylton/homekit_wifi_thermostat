@@ -14,16 +14,17 @@ words you can create a program of when you want the heating to go on or off.
 
 Now updated to include a screen (SSD1306 OLED) and buttons to adjust up and down the target temperature. 
 
+The screen will illuminate during the inital setup and on power up. And then wil go dark afetr aproxiamtely 10 seconds, it will come on when you press the up or down button and then go off again approxiamtely 10 seconds afetr the last button press.
 
 GPIO used are as follows:- 
 
   4 - DH22
 
-  12 - Temperature
+  12 - Temperature Up (switch connect to ground)
 
-  13 - Temperature
+  13 - Temperature Down (switch conected to ground) 
   
-  0 - Reset
+  0 - Reset (switch connected to ground) 
   
   2 - LED 
   
