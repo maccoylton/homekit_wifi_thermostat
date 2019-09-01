@@ -48,7 +48,7 @@
 #include <dht/dht.h>
 
 #include "wifi_thermostat.h"
-#include <button.h>
+#include <adv_button.h>
 
 
 #include <led_codes.h>
@@ -121,12 +121,13 @@ static const ssd1306_t display = {
 
 /* Local frame display_buffer */
 static uint8_t display_buffer[DISPLAY_WIDTH * DISPLAY_HEIGHT / 8];
+static bool screen_on = false;
 
 #define SECOND (1000 / portTICK_PERIOD_MS)
 
 // I2C
 
-
+ETSTimer screen_timer;
 
 #include <ota-api.h>
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
@@ -235,7 +236,7 @@ static void ssd1306_task(void *pvParameters)
         }
         
         count ++;
-        if (count == 60){
+/*        if (count == 60){
             
             count = 0;
             if (ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
@@ -249,12 +250,12 @@ static void ssd1306_task(void *pvParameters)
             vTaskDelay(SECOND*5);
             ssd1306_clear_screen(&display);
         }
-        
+*/
         
         if (ssd1306_load_frame_buffer(&display, display_buffer))
             goto error_loop;
         
-        vTaskDelay(SECOND);
+        vTaskDelay(SECOND/2);
         
         
     }
@@ -266,6 +267,23 @@ error_loop:
         printf("%s: error loop\n", __FUNCTION__);
         led_code(LED_GPIO, FUNCTION_A);
     }
+}
+
+void switch_screen_on ( bool screen_state, int time_to_be_on){
+    screen_on = screen_state;
+    ssd1306_display_on(&display, screen_state);
+    printf("Screen_on screen on state: %d\n", screen_state);
+    if (time_to_be_on > 0){
+        sdk_os_timer_arm(&screen_timer, time_to_be_on, 0);
+        printf("Screen off timer set to %d\n", time_to_be_on);
+    }
+}
+
+
+void screen_timer_fn (){
+    
+    switch_screen_on (false , 0);
+    printf("Screen Off timer fucntion\n");
 }
 
 
@@ -288,6 +306,7 @@ void screen_init(void)
     ssd1306_set_whole_display_lighting(&display, false);
     ssd1306_set_scan_direction_fwd(&display, false);
     ssd1306_set_segment_remapping_enabled(&display, true);
+    sdk_os_timer_setfn(&screen_timer, screen_timer_fn, NULL);
 }
 
 // LCD ssd1306
@@ -355,7 +374,7 @@ void qrcode_show(homekit_server_config_t *config) {
     
     qrcode_print(&qrcode);  // print on console
     
-    ssd1306_display_on(&display, true);
+    switch_screen_on (true,0);
     
     ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK);
     ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_6X12_ISO8859_1], 0, 26, config->password, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
@@ -372,7 +391,7 @@ void qrcode_hide() {
         return;
     
     ssd1306_clear_screen(&display);
-    ssd1306_display_on(&display, false);
+    switch_screen_on ( false, 0);
     
     qrcode_shown = false;
 }
@@ -382,59 +401,36 @@ void qrcode_hide() {
 
 
 void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *context) {
-    save_characteristic_to_flash (ch, value);
+
     process_setting_update();
 }
 
 
-void up_button_callback(button_event_t event, void* context) {
-    switch (event) {
-        case button_event_single_press:
-            printf("Button UP\n");
-            if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 0.5))
-            {
-                target_temperature.value.float_value += 0.5;
-                save_characteristic_to_flash (&target_temperature, target_temperature.value);
-                homekit_characteristic_notify(&target_temperature, target_temperature.value);
-            }
-            break;
-        case button_event_long_press:
-            printf("Button UP\n");
-            if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 1))
-            {
-                target_temperature.value.float_value += 1;
-                save_characteristic_to_flash (&target_temperature, target_temperature.value);
-                homekit_characteristic_notify(&target_temperature, target_temperature.value);
-            }
-            break;
-        default:
-            printf("Unknown button event: %d\n", event);
+void up_button_callback(uint8_t gpio, void* args) {
+    
+    switch_screen_on (true, 20*SECOND);
+    
+    printf("Button UP single press\n");
+    if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 0.5))
+    {
+        target_temperature.value.float_value += 0.5;
+        save_characteristic_to_flash (&target_temperature, target_temperature.value);
+        homekit_characteristic_notify(&target_temperature, target_temperature.value);
     }
+    
 }
 
 
-void down_button_callback(button_event_t event, void* context) {
-    switch (event) {
-        case button_event_single_press:
-            printf("Button DOWN\n");
-            if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 0.5))
-            {
-                target_temperature.value.float_value -= 0.5;
-                save_characteristic_to_flash (&target_temperature, target_temperature.value);
-                homekit_characteristic_notify(&target_temperature, target_temperature.value);
-            }
-            break;
-        case button_event_long_press:
-            printf("Button UP\n");
-            if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 1))
-            {
-                target_temperature.value.float_value -= 1;
-                save_characteristic_to_flash (&target_temperature, target_temperature.value);
-                homekit_characteristic_notify(&target_temperature, target_temperature.value);
-            }
-            break;
-        default:
-            printf("Unknown button event: %d\n", event);
+void down_button_callback(uint8_t gpio, void* args) {
+    
+    switch_screen_on (true, 20*SECOND);
+    
+    printf("Button DOWN single press\n");
+    if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 0.5))
+    {
+        target_temperature.value.float_value -= 0.5;
+        save_characteristic_to_flash (&target_temperature, target_temperature.value);
+        homekit_characteristic_notify(&target_temperature, target_temperature.value);
     }
 }
 
@@ -563,52 +559,34 @@ void reset_configuration() {
 }
 
 
-void reset_button_callback(button_event_t event, void* context) {
-    switch (event) {
-        case button_event_single_press:
-            printf("Button event: %d, doing nothin\n", event);
-            break;
-        case button_event_long_press:
-            printf("Button event: %d, resetting homekit config\n", event);
-            reset_configuration();
-            break;
-        default:
-            printf("Unknown button event: %d\n", event);
-    }
+void reset_button_callback(uint8_t gpio, void* args) {
+    
+    printf("Reset Button event long press on GPIO : %d\n", gpio);
+    reset_configuration();
+    
 }
 
 void thermostat_init() {
     
-    int result;
+    const uint8_t single_press = 1, double_press = 2,  long_press = 3, very_long_press = 4, hold_press = 5;
+        
 
     while (ssd1306_init(&display) != 0) {
         printf("%s: failed to init SSD1306 lcd\n", __func__);
         vTaskDelay(SECOND);
     }
-    button_config_t up_button_config = BUTTON_CONFIG(
-                                                  .active_level=button_active_low,
-                                                  );
-    button_config_t down_button_config = BUTTON_CONFIG(
-                                                     .active_level=button_active_low,
-                                                     );
-    button_config_t reset_button_config = BUTTON_CONFIG(
-                                                     .active_level=button_active_low,
-                                                     );
     
-    result = button_create(UP_BUTTON_GPIO, up_button_config, up_button_callback, NULL);
-    if (result) {
-        printf("Failed to initialize button Up, code %d\n", result);
-    }
+    adv_button_set_evaluate_delay(10);
     
-    result = button_create(DOWN_BUTTON_GPIO, down_button_config, down_button_callback, NULL);
-    if (result) {
-        printf("Failed to initialize button Down, code %d\n", result);
-    }
+    /* GPIO for button, pull-up resistor, inverted */
+    adv_button_create(UP_BUTTON_GPIO, true, false);
+    adv_button_register_callback_fn(UP_BUTTON_GPIO, up_button_callback, single_press, NULL);
     
-    result = button_create(RESET_BUTTON_GPIO, reset_button_config, reset_button_callback, NULL);
-    if (result) {
-        printf("Failed to initialize button Reset, code %d\n", result);
-    }
+    adv_button_create(DOWN_BUTTON_GPIO, true, false);
+    adv_button_register_callback_fn(DOWN_BUTTON_GPIO, down_button_callback, single_press, NULL);
+  
+    adv_button_create(RESET_BUTTON_GPIO, true, false);
+    adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, very_long_press, NULL);
     
     xTaskCreate(temperature_sensor_task, "Thermostat", 256, NULL, 2, NULL);
 

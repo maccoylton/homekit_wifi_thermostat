@@ -12,6 +12,7 @@ EXTRA_COMPONENTS = \
 	$(abspath ../components/esp-homekit)\
 	$(abspath ../components/esp-qrcode)\
 	$(abspath ../components/esp-button)\
+	$(abspath ../components/esp-adv-button)\
 	$(abspath ../components/esp-homekit-common-functions/led_codes)\
 	$(abspath ../components/esp-homekit-common-functions/ota)\
 	$(abspath ../components/esp-homekit-common-functions/custom_characteristics)
@@ -28,7 +29,7 @@ HOMEKIT_MAX_CLIENTS = 16
 HOMEKIT_SMALL = 0
 HOMEKIT_SPI_FLASH_BASE_ADDR ?= 0x8c000
 
-EXTRA_CFLAGS += -I../.. -DHOMEKIT_SHORT_APPLE_UUIDS -DHOMEKIT_DEBUG -DFONTS_TERMINUS_BOLD_8X14_ISO8859_1 -DFONTS_TERMINUS_BOLD_14X28_ISO8859_1 -DFONTS_TERMINUS_6X12_ISO8859_1
+EXTRA_CFLAGS += -I../.. -DHOMEKIT_SHORT_APPLE_UUIDS -DFONTS_TERMINUS_BOLD_8X14_ISO8859_1 -DFONTS_TERMINUS_BOLD_14X28_ISO8859_1 -DFONTS_TERMINUS_6X12_ISO8859_1
 EXTRA_CFLAGS += -DHOMEKIT_OVERCLOCK_PAIR_VERIFY
 EXTRA_CFLAGS += -DHOMEKIT_OVERCLOCK_PAIR_SETUP
 
