@@ -56,13 +56,13 @@
 
 #define TEMPERATURE_SENSOR_PIN 4
 #define TEMPERATURE_POLL_PERIOD 10000
+#define TEMP_DIFF_TRIGGER 0.5
 #define UP_BUTTON_GPIO 12
 #define DOWN_BUTTON_GPIO 13
 #define RESET_BUTTON_GPIO 0
 #define LED_GPIO 2
 #define QRCODE_VERSION 2
 
-int button_pressed_value=0; /*set to o when botton is connect to gound, 1 when button is providing +3.3V */
 int led_off_value=1; /* global varibale to support LEDs set to 0 where the LED is connected to GND, 1 where +3.3v */
 
 
@@ -122,8 +122,12 @@ static const ssd1306_t display = {
 /* Local frame display_buffer */
 static uint8_t display_buffer[DISPLAY_WIDTH * DISPLAY_HEIGHT / 8];
 static bool screen_on = false;
+enum screen_display {logo, thermostat}  ;
+static enum screen_display screen;
 
-#define SECOND (1000 / portTICK_PERIOD_MS)
+#define SECOND_TICKS (1000 / portTICK_PERIOD_MS) /* a second in ticks */
+#define SCREEN_DELAY 10000 /* in milliseconds */
+
 
 // I2C
 
@@ -137,16 +141,21 @@ homekit_characteristic_t serial       = HOMEKIT_CHARACTERISTIC_(SERIAL_NUMBER, D
 homekit_characteristic_t model        = HOMEKIT_CHARACTERISTIC_(MODEL,         DEVICE_MODEL);
 homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION,  FW_VERSION);
 
+
+void switch_screen_on (bool screen_state, int time_to_be_on);
+void display_logo ();
+
 void identify_task(void *_args) {
 
     led_code(LED_GPIO, IDENTIFY_ACCESSORY);
-
+    switch_screen_on (true,10*SECOND_TICKS);
+    display_logo ();
     vTaskDelete(NULL);
 }
 
 void thermostat_identify(homekit_value_t _value) {
     printf("Thermostat identify\n");
-    xTaskCreate(identify_task, "identify", 128, NULL, 2, NULL);
+    xTaskCreate(identify_task, "identify", 256, NULL, 2, NULL);
 }
 
 
@@ -163,8 +172,22 @@ homekit_characteristic_t heating_threshold   = HOMEKIT_CHARACTERISTIC_( HEATING_
 homekit_characteristic_t current_humidity    = HOMEKIT_CHARACTERISTIC_( CURRENT_RELATIVE_HUMIDITY, 0 );
 
 
+void display_logo (){
+    
+    screen = logo;
+    if (ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
+        printf("Error printing rectangle\bn");
+    }
+    
+    ssd1306_clear_screen(&display);
+    ssd1306_load_xbm(&display, homekit_logo, display_buffer);
+    if (ssd1306_load_frame_buffer(&display, display_buffer)){
+        printf ( "Error loading frame buffer for logo\n");
+    }
+}
 
-// LCD ssd1306 
+
+// LCD ssd1306
 
 static void ssd1306_task(void *pvParameters)
 {
@@ -172,90 +195,71 @@ static void ssd1306_task(void *pvParameters)
     char mode_string[20];
     char temperature_string[20];
     char humidity_string[20];
-    int count =0;
     
-    
-    vTaskDelay(SECOND);
+    vTaskDelay(SECOND_TICKS);
     ssd1306_set_whole_display_lighting(&display, false);
     
-    ssd1306_load_xbm(&display, homekit_logo, display_buffer);
-    if (ssd1306_load_frame_buffer(&display, display_buffer))
-        goto error_loop;
-    vTaskDelay(SECOND*5);
+    display_logo ();
+    vTaskDelay(SECOND_TICKS*5);
     
     ssd1306_clear_screen(&display);
     
     while (1) {
-        if (count==0){
-            if (ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
-                printf("Error printing rectangle\bn");
+        
+        if (screen_on){
+            if (screen==logo){
+                vTaskDelay(SECOND_TICKS*5); /* leave the logo on for 5 seconds before changing*/
+                screen = thermostat;
+                if (ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
+                    printf("Error printing rectangle\bn");
+                }
+                
+                ssd1306_load_xbm(&display, thermostat_xbm, display_buffer);
+                if (ssd1306_load_frame_buffer(&display, display_buffer))
+                    goto error_loop;
             }
             
-            ssd1306_load_xbm(&display, thermostat_xbm, display_buffer);
+            sprintf(target_temp_string, "%g", (float)target_temperature.value.float_value);
+            switch( (int)current_state.value.int_value)
+            {
+                case 0:
+                    sprintf(mode_string, "OFF ");
+                    break;
+                case 1:
+                    sprintf(mode_string, "HEAT");
+                    break;
+                case 2:
+                    sprintf(mode_string, "COOL");
+                    break;
+                case 3:
+                    sprintf(mode_string, "AUTO");
+                    break;
+                default:
+                    sprintf(mode_string, "?   ");
+            }
+            
+            if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 5, 2, target_temp_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+                printf("Error printing target temp\n");
+            }
+            
+            if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 70, 2, mode_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1 ){
+                printf("Error printing mode\n");
+            }
+            
+            sprintf(temperature_string, "%g", (float)current_temperature.value.float_value);
+            sprintf(humidity_string, "%g", (float)current_humidity.value.float_value);
+            if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 30, 41 , temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+                printf("Error printing temperature\n");
+            }
+            if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 92, 41 , humidity_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
+                printf("Error printing humidity\n");
+            }
+            
+            
             if (ssd1306_load_frame_buffer(&display, display_buffer))
                 goto error_loop;
         }
-        
-        sprintf(target_temp_string, "%g", (float)target_temperature.value.float_value);
-        switch( (int)current_state.value.int_value)
-        {
-            case 0:
-                sprintf(mode_string, "OFF ");
-                break;
-            case 1:
-                sprintf(mode_string, "HEAT");
-                break;
-            case 2:
-                sprintf(mode_string, "COOL");
-                break;
-            case 3:
-                sprintf(mode_string, "AUTO");
-                break;
-            default:
-                sprintf(mode_string, "?   ");
-        }
-        
-        //        sprintf(mode_string, "%i", (int)current_state.value.int_value);
-        
-        
-        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 5, 2, target_temp_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
-            printf("Error printing target temp\n");
-        }
-        
-        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_14X28_ISO8859_1], 70, 2, mode_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1 ){
-            printf("Error printing mode\n");
-        }
-        
-        sprintf(temperature_string, "%g", (float)current_temperature.value.float_value);
-        sprintf(humidity_string, "%g", (float)current_humidity.value.float_value);
-        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 30, 41 , temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
-            printf("Error printing temperature\n");
-        }
-        if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 92, 41 , humidity_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
-            printf("Error printing humidity\n");
-        }
-        
-        count ++;
-/*        if (count == 60){
-            
-            count = 0;
-            if (ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK)){
-                printf("Error printing rectangle\bn");
-            }
-            
-            ssd1306_clear_screen(&display);
-            ssd1306_load_xbm(&display, homekit_logo, display_buffer);
-            if (ssd1306_load_frame_buffer(&display, display_buffer))
-                goto error_loop;
-            vTaskDelay(SECOND*5);
-            ssd1306_clear_screen(&display);
-        }
-*/
-        
-        if (ssd1306_load_frame_buffer(&display, display_buffer))
-            goto error_loop;
-        
-        vTaskDelay(SECOND/2);
+        vTaskDelay(SECOND_TICKS/4);
         
         
     }
@@ -263,20 +267,44 @@ static void ssd1306_task(void *pvParameters)
 error_loop:
     printf("%s: error while loading framebuffer into SSD1306\n", __func__);
     for (;;) {
-        vTaskDelay(2 * SECOND);
+        vTaskDelay(2 * SECOND_TICKS);
         printf("%s: error loop\n", __FUNCTION__);
         led_code(LED_GPIO, FUNCTION_A);
     }
 }
 
 void switch_screen_on ( bool screen_state, int time_to_be_on){
-    screen_on = screen_state;
-    ssd1306_display_on(&display, screen_state);
-    printf("Screen_on screen on state: %d\n", screen_state);
-    if (time_to_be_on > 0){
-        sdk_os_timer_arm(&screen_timer, time_to_be_on, 0);
-        printf("Screen off timer set to %d\n", time_to_be_on);
+
+    
+    if (screen_on ==true && screen_state ==true){
+        if (time_to_be_on >0 ){
+            /* if its already on and the time to be on > 0 then reset the timer, otherwise do nothing */
+            sdk_os_timer_disarm (&screen_timer );
+            sdk_os_timer_arm(&screen_timer, time_to_be_on, 0);
+        }
     }
+    
+    if ( screen_on == true && screen_state == false){
+        /* if its on and we called for off, switch it off and disable the timer */
+        screen_on = false;
+        ssd1306_display_on(&display, screen_on);
+        sdk_os_timer_disarm (&screen_timer );
+    }
+    
+    if ( screen_on == false && screen_state == true){
+        /* if it off and we called for it to be on, switch it on */
+        screen_on = screen_state;
+        ssd1306_display_on(&display, screen_on);
+        if (time_to_be_on > 0){
+            /* if the timer is > 0m, set the timer */
+            sdk_os_timer_arm(&screen_timer, time_to_be_on, 0);
+            printf("Screen off timer set to %d\n", time_to_be_on);
+        }
+    }
+    
+
+    printf("Screen_on screen on state: %d\n", screen_state);
+
 }
 
 
@@ -301,7 +329,7 @@ void screen_init(void)
 
     while (ssd1306_init(&display) != 0) {
         printf("%s: failed to init SSD1306 lcd\n", __func__);
-        vTaskDelay(SECOND);
+        vTaskDelay(SECOND_TICKS);
     }
     ssd1306_set_whole_display_lighting(&display, false);
     ssd1306_set_scan_direction_fwd(&display, false);
@@ -403,34 +431,45 @@ void qrcode_hide() {
 void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *context) {
 
     process_setting_update();
+    switch_screen_on (true, SCREEN_DELAY);
+
 }
 
 
 void up_button_callback(uint8_t gpio, void* args) {
     
-    switch_screen_on (true, 20*SECOND);
-    
-    printf("Button UP single press\n");
-    if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 0.5))
-    {
-        target_temperature.value.float_value += 0.5;
-        save_characteristic_to_flash (&target_temperature, target_temperature.value);
-        homekit_characteristic_notify(&target_temperature, target_temperature.value);
+    if  (screen_on == false){
+        /* if the screen is currently off the just switch it on */
+        switch_screen_on (true, SCREEN_DELAY);
+    } else {
+        /* the screen is on and the button press is to updated the value */
+        switch_screen_on (true, SCREEN_DELAY); /* extend the screen delay */
+        printf("Button UP single press\n");
+        if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 0.5))
+        {
+            target_temperature.value.float_value += 0.5;
+            save_characteristic_to_flash (&target_temperature, target_temperature.value);
+            homekit_characteristic_notify(&target_temperature, target_temperature.value);
+        }
     }
-    
 }
 
 
 void down_button_callback(uint8_t gpio, void* args) {
     
-    switch_screen_on (true, 20*SECOND);
-    
-    printf("Button DOWN single press\n");
-    if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 0.5))
-    {
-        target_temperature.value.float_value -= 0.5;
-        save_characteristic_to_flash (&target_temperature, target_temperature.value);
-        homekit_characteristic_notify(&target_temperature, target_temperature.value);
+    if (screen_on == false){
+        /* if the screen is currently off the just switch it on */
+        switch_screen_on (true, SCREEN_DELAY);
+    } else {
+        /* the screen is on and the button press is to updated the value */
+        switch_screen_on (true, SCREEN_DELAY); /* extend the screen delay */
+        printf("Button DOWN single press\n");
+        if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 0.5))
+        {
+            target_temperature.value.float_value -= 0.5;
+            save_characteristic_to_flash (&target_temperature, target_temperature.value);
+            homekit_characteristic_notify(&target_temperature, target_temperature.value);
+        }
     }
 }
 
@@ -444,7 +483,7 @@ void process_setting_update() {
             current_state.value = HOMEKIT_UINT8(1);
             save_characteristic_to_flash (&current_state, current_state.value);
             homekit_characteristic_notify(&current_state, current_state.value);
-
+            switch_screen_on (true, SCREEN_DELAY);
         }
     } else if ((state == 2 && current_temperature.value.float_value > target_temperature.value.float_value) ||
             (state == 3 && current_temperature.value.float_value > cooling_threshold.value.float_value)) {
@@ -452,12 +491,14 @@ void process_setting_update() {
             current_state.value = HOMEKIT_UINT8(2);
             save_characteristic_to_flash (&current_state, current_state.value);
             homekit_characteristic_notify(&current_state, current_state.value);
+            switch_screen_on (true, SCREEN_DELAY);
         }
     } else {
         if (current_state.value.int_value != 0) {
             current_state.value = HOMEKIT_UINT8(0);
             save_characteristic_to_flash (&current_state, current_state.value);
             homekit_characteristic_notify(&current_state, current_state.value);
+            switch_screen_on (true, SCREEN_DELAY);
         }
     }
 }
@@ -467,7 +508,7 @@ void temperature_sensor_task(void *_args) {
     
     gpio_set_pullup(TEMPERATURE_SENSOR_PIN, false, false);
     
-    float humidity_value, temperature_value;
+    float humidity_value, temperature_value, temp_diff;
     while (1) {
         bool success = dht_read_float_data(
                                            DHT_TYPE_DHT22, TEMPERATURE_SENSOR_PIN,
@@ -476,6 +517,7 @@ void temperature_sensor_task(void *_args) {
         
         if (success) {
             printf("Got readings: temperature %g, humidity %g\n", temperature_value, humidity_value);
+            temp_diff = current_temperature.value.float_value - temperature_value;
             if (temperature_value >= current_temperature.min_value[0] && temperature_value <= current_temperature.max_value[0])
             {
                 current_temperature.value = HOMEKIT_FLOAT(temperature_value);
@@ -489,8 +531,9 @@ void temperature_sensor_task(void *_args) {
                 homekit_characteristic_notify(&current_humidity, current_humidity.value);
             }
             
-            process_setting_update();
-            
+            if (abs(temp_diff) > TEMP_DIFF_TRIGGER) {
+                process_setting_update();
+            }
         } else {
             printf("Couldnt read data from sensor\n");
             led_code(LED_GPIO, SENSOR_ERROR);
@@ -573,7 +616,7 @@ void thermostat_init() {
 
     while (ssd1306_init(&display) != 0) {
         printf("%s: failed to init SSD1306 lcd\n", __func__);
-        vTaskDelay(SECOND);
+        vTaskDelay(SECOND_TICKS);
     }
     
     adv_button_set_evaluate_delay(10);
@@ -593,6 +636,7 @@ void thermostat_init() {
     gpio_enable(LED_GPIO, GPIO_OUTPUT);
     
     xTaskCreate(ssd1306_task, "ssd1306_task", 512, NULL, 2, NULL);
+    sdk_os_timer_arm(&screen_timer, SCREEN_DELAY, 0);
 
 }
 

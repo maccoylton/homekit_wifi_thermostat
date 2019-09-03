@@ -20,9 +20,9 @@ GPIO used are as follows:-
 
   4 - DH22
 
-  12 - Temperature Up (switch connect to ground)
+  12 - Temperature Up (button connect to ground)
 
-  13 - Temperature Down (switch conected to ground) 
+  13 - Temperature Down (button conected to ground) 
   
   0 - Reset (switch connected to ground) 
   
