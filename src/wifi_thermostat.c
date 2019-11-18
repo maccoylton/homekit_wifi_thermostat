@@ -47,12 +47,12 @@
 
 #include <dht/dht.h>
 
-#include "wifi_thermostat.h"
+#include <wifi_thermostat.h>
 #include <adv_button.h>
-
-
 #include <led_codes.h>
 #include <custom_characteristics.h>
+#include <shared_functions.h>
+
 
 #define TEMPERATURE_SENSOR_PIN 4
 #define TEMPERATURE_POLL_PERIOD 10000
@@ -64,7 +64,7 @@
 #define QRCODE_VERSION 2
 
 int led_off_value=1; /* global varibale to support LEDs set to 0 where the LED is connected to GND, 1 where +3.3v */
-
+const int status_led_gpio = 2; /*set the gloabl variable for the led to be sued for showing status */
 
 // add this section to make your device OTA capable
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
@@ -134,6 +134,7 @@ static enum screen_display screen;
 ETSTimer screen_timer;
 
 #include <ota-api.h>
+homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
 homekit_characteristic_t name         = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
 homekit_characteristic_t manufacturer = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  DEVICE_MANUFACTURER);
@@ -145,7 +146,7 @@ homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISIO
 void switch_screen_on (bool screen_state, int time_to_be_on);
 void display_logo ();
 
-void identify_task(void *_args) {
+void thermostat_identify_task(void *_args) {
 
     led_code(LED_GPIO, IDENTIFY_ACCESSORY);
     switch_screen_on (true,10*SECOND_TICKS);
@@ -155,7 +156,7 @@ void identify_task(void *_args) {
 
 void thermostat_identify(homekit_value_t _value) {
     printf("Thermostat identify\n");
-    xTaskCreate(identify_task, "identify", 256, NULL, 2, NULL);
+    xTaskCreate(thermostat_identify_task, "identify", 256, NULL, 2, NULL);
 }
 
 
@@ -163,7 +164,7 @@ void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *contex
 void process_setting_update();
 
 homekit_characteristic_t current_temperature = HOMEKIT_CHARACTERISTIC_( CURRENT_TEMPERATURE, 0 );
-homekit_characteristic_t target_temperature  = HOMEKIT_CHARACTERISTIC_( TARGET_TEMPERATURE, 22, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(on_update));
+homekit_characteristic_t target_temperature  = HOMEKIT_CHARACTERISTIC_( TARGET_TEMPERATURE, 22,.callback=HOMEKIT_CHARACTERISTIC_CALLBACK(on_update));
 homekit_characteristic_t units               = HOMEKIT_CHARACTERISTIC_( TEMPERATURE_DISPLAY_UNITS, 0 );
 homekit_characteristic_t current_state       = HOMEKIT_CHARACTERISTIC_( CURRENT_HEATING_COOLING_STATE, 0 );
 homekit_characteristic_t target_state        = HOMEKIT_CHARACTERISTIC_( TARGET_HEATING_COOLING_STATE, 0, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(on_update) );
@@ -436,7 +437,7 @@ void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *contex
 }
 
 
-void up_button_callback(uint8_t gpio, void* args) {
+void up_button_callback(uint8_t gpio, void* args, const uint8_t param) {
     
     if  (screen_on == false){
         /* if the screen is currently off the just switch it on */
@@ -455,7 +456,7 @@ void up_button_callback(uint8_t gpio, void* args) {
 }
 
 
-void down_button_callback(uint8_t gpio, void* args) {
+void down_button_callback(uint8_t gpio, void* args, const uint8_t param) {
     
     if (screen_on == false){
         /* if the screen is currently off the just switch it on */
@@ -566,6 +567,7 @@ homekit_accessory_t *accessories[] = {
             &units,
             &current_humidity,
             &ota_trigger,
+            &wifi_reset,
             NULL
         }),
         NULL
@@ -573,47 +575,9 @@ homekit_accessory_t *accessories[] = {
     NULL
 };
 
-void reset_configuration_task() {
-
-    led_code(LED_GPIO, WIFI_CONFIG_RESET);
-
-//    printf("Resetting Wifi Config\n");
-
-//    wifi_config_reset();
-
-//    vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-    printf("Resetting HomeKit Config\n");
-
-    homekit_server_reset();
-
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-    printf("Restarting\n");
-
-    sdk_system_restart();
-
-    vTaskDelete(NULL);
-}
-
-void reset_configuration() {
-    printf("Resetting Sonoff configuration\n");
-    xTaskCreate(reset_configuration_task, "Reset configuration", 256, NULL, 2, NULL);
-}
-
-
-void reset_button_callback(uint8_t gpio, void* args) {
-    
-    printf("Reset Button event long press on GPIO : %d\n", gpio);
-    reset_configuration();
-    
-}
 
 void thermostat_init() {
     
-    const uint8_t single_press = 1, double_press = 2,  long_press = 3, very_long_press = 4, hold_press = 5;
-        
-
     while (ssd1306_init(&display) != 0) {
         printf("%s: failed to init SSD1306 lcd\n", __func__);
         vTaskDelay(SECOND_TICKS);
@@ -623,13 +587,13 @@ void thermostat_init() {
     
     /* GPIO for button, pull-up resistor, inverted */
     adv_button_create(UP_BUTTON_GPIO, true, false);
-    adv_button_register_callback_fn(UP_BUTTON_GPIO, up_button_callback, single_press, NULL);
+    adv_button_register_callback_fn(UP_BUTTON_GPIO, up_button_callback, SINGLEPRESS_TYPE, NULL, 0);
     
     adv_button_create(DOWN_BUTTON_GPIO, true, false);
-    adv_button_register_callback_fn(DOWN_BUTTON_GPIO, down_button_callback, single_press, NULL);
+    adv_button_register_callback_fn(DOWN_BUTTON_GPIO, down_button_callback, SINGLEPRESS_TYPE, NULL, 0);
   
     adv_button_create(RESET_BUTTON_GPIO, true, false);
-    adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, very_long_press, NULL);
+    adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, VERYLONGPRESS_TYPE, NULL, 0);
     
     xTaskCreate(temperature_sensor_task, "Thermostat", 256, NULL, 2, NULL);
 
@@ -640,32 +604,19 @@ void thermostat_init() {
 
 }
 
-void create_accessory_name() {
 
-    int serialLength = snprintf(NULL, 0, "%d", sdk_system_get_chip_id());
-
-    char *serialNumberValue = malloc(serialLength + 1);
-
-    snprintf(serialNumberValue, serialLength + 1, "%d", sdk_system_get_chip_id());
-    
-    int name_len = snprintf(NULL, 0, "%s-%s-%s",
-				DEVICE_NAME,
-				DEVICE_MODEL,
-				serialNumberValue);
-
-    if (name_len > 63) {
-        name_len = 63;
-    }
-
-    char *name_value = malloc(name_len + 1);
-
-    snprintf(name_value, name_len + 1, "%s-%s-%s",
-		 DEVICE_NAME, DEVICE_MODEL, serialNumberValue);
-
-   
-    name.value = HOMEKIT_STRING(name_value);
-    serial.value = name.value;
+void accessory_init (void ){
+    /* initalise anything you don't want started until wifi and pairing is confirmed */
+    qrcode_hide();
+    thermostat_init();
 }
+
+void accessory_init_not_paired (void) {
+    /* initalise anything you don't want started until wifi and homekit imitialisation is confirmed, but not paired */
+    qrcode_show(&config);
+}
+
+
 
 void load_settings_from_flash (){
     
@@ -675,15 +626,6 @@ void load_settings_from_flash (){
 }
 
 
-void on_homekit_event(homekit_event_t event) {
-    if (event == HOMEKIT_EVENT_PAIRING_ADDED) {
-        qrcode_hide();
-        thermostat_init();
-    } else if (event == HOMEKIT_EVENT_PAIRING_REMOVED) {
-        if (!homekit_is_paired())
-            sdk_system_restart();
-    }
-}
 homekit_server_config_t config = {
     .accessories = accessories,
     .password = "111-11-111",
@@ -692,33 +634,18 @@ homekit_server_config_t config = {
 };
 
 void user_init(void) {
-    uart_set_baud(0, 115200);
 
-//    wifi_init();
-
-    get_sysparam_info ();
+    standard_init (&name, &manufacturer, &model, &serial, &revision);
+    
     load_settings_from_flash ();
-
-    create_accessory_name(); 
-
-
 
     printf ("Calling screen init\n");
     printf ("fonts count %i\n", font_builtin_fonts_count);
     screen_init();
     printf ("Screen init called\n");
-    int c_hash=ota_read_sysparam(&manufacturer.value.string_value,&serial.value.string_value,
-                                      &model.value.string_value,&revision.value.string_value);
-    if (c_hash==0) c_hash=1;
-        config.accessories[0]->config_number=c_hash;
- 
-    if (!homekit_is_paired()) {
-        qrcode_show(&config);
-    } else
-    {
-        thermostat_init();
-    }
-    homekit_server_init(&config);
+
+    wifi_config_init("WiFi-Thermostat", NULL, on_wifi_ready);
+
 }
 
 
