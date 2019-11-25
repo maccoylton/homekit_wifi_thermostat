@@ -570,6 +570,7 @@ homekit_accessory_t *accessories[] = {
             &current_humidity,
             &ota_trigger,
             &wifi_reset,
+            &wifi_check_interval,
             NULL
         }),
         NULL
