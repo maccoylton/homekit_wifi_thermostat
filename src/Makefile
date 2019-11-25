@@ -14,7 +14,6 @@ EXTRA_COMPONENTS = \
     $(abspath ../components/esp-wifi-config)\
     $(abspath ../components/UDPlogger)\
 	$(abspath ../components/esp-qrcode)\
-	$(abspath ../components/esp-button)\
 	$(abspath ../components/esp-adv-button)\
 	$(abspath ../components/esp-homekit-common-functions/led_codes)\
 	$(abspath ../components/esp-homekit-common-functions/ota)\
