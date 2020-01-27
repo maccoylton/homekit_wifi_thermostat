@@ -1,3 +1,5 @@
+![GitHub All Releases](https://img.shields.io/github/downloads/maccoylton/homekit_wifi_thermostat/total)
+
 # homekit_wifi_thermostat
 
 A thermostat accessory for remotely controlling central heating.
