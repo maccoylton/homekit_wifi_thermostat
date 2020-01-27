@@ -1,4 +1,5 @@
 ![GitHub All Releases](https://img.shields.io/github/downloads/maccoylton/homekit_wifi_thermostat/total)
+![GitHub Releases](https://img.shields.io/github/downloads/maccoylton/homekit_wifi_thermostat/latest/total)
 
 # homekit_wifi_thermostat
 
