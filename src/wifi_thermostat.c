@@ -38,6 +38,7 @@
 #include <task.h>
 #include <sysparam.h>
 
+
 #include <ssd1306/ssd1306.h>
 
 #include <homekit/homekit.h>
@@ -55,7 +56,9 @@
 
 
 #define TEMPERATURE_SENSOR_PIN 4
-#define TEMPERATURE_POLL_PERIOD 10000
+#define TEMPERATURE_POLL_PERIOD 30000
+#define TEMP_DIFF_NOTIFY_TRIGGER 0.2
+#define HUMIDITY_DIFF_TRIGGER_VALUE 2
 #define TEMP_DIFF_TRIGGER 0.5
 #define UP_BUTTON_GPIO 12
 #define DOWN_BUTTON_GPIO 13
@@ -137,6 +140,10 @@ ETSTimer screen_timer;
 homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
 homekit_characteristic_t wifi_check_interval   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_CHECK_INTERVAL, 10, .setter=wifi_check_interval_set);
 /* checks the wifi is connected and flashes status led to indicated connected */
+homekit_characteristic_t task_stats   = HOMEKIT_CHARACTERISTIC_(CUSTOM_TASK_STATS, false , .setter=task_stats_set);
+homekit_characteristic_t ota_beta     = HOMEKIT_CHARACTERISTIC_(CUSTOM_OTA_BETA, false, .setter=ota_beta_set);
+homekit_characteristic_t lcm_beta    = HOMEKIT_CHARACTERISTIC_(CUSTOM_LCM_BETA, false, .setter=lcm_beta_set);
+
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
 homekit_characteristic_t name         = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
 homekit_characteristic_t manufacturer = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  DEVICE_MANUFACTURER);
@@ -158,7 +165,7 @@ void thermostat_identify_task(void *_args) {
 
 void thermostat_identify(homekit_value_t _value) {
     printf("Thermostat identify\n");
-    xTaskCreate(thermostat_identify_task, "identify", 256, NULL, 2, NULL);
+    xTaskCreate(thermostat_identify_task, "identify", 256, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 
@@ -194,10 +201,10 @@ void display_logo (){
 
 static void ssd1306_task(void *pvParameters)
 {
-    char target_temp_string[20];
-    char mode_string[20];
-    char temperature_string[20];
-    char humidity_string[20];
+    char target_temp_string[5];
+    char mode_string[5];
+    char temperature_string[5];
+    char humidity_string[5];
     
     vTaskDelay(SECOND_TICKS);
     ssd1306_set_whole_display_lighting(&display, false);
@@ -263,9 +270,8 @@ static void ssd1306_task(void *pvParameters)
                 goto error_loop;
         }
         vTaskDelay(SECOND_TICKS/4);
-        
-        
     }
+
     
 error_loop:
     printf("%s: error while loading framebuffer into SSD1306\n", __func__);
@@ -275,6 +281,7 @@ error_loop:
         led_code(LED_GPIO, FUNCTION_A);
     }
 }
+
 
 void switch_screen_on ( bool screen_state, int time_to_be_on){
 
@@ -305,7 +312,6 @@ void switch_screen_on ( bool screen_state, int time_to_be_on){
         }
     }
     
-
     printf("Screen_on screen on state: %d\n", screen_state);
 
 }
@@ -324,7 +330,7 @@ void screen_init(void)
     //sdk_system_update_cpu_freq(160);
 
 
-    printf("Screen Init SDK version:%s\n", sdk_system_get_sdk_version());
+    printf("%s: SDK version:%s, Free Heap %d\n", __func__, sdk_system_get_sdk_version(),  xPortGetFreeHeapSize());
 
 #ifdef I2C_CONNECTION
     i2c_init(I2C_BUS, SCL_PIN, SDA_PIN, I2C_FREQ_400K);
@@ -338,6 +344,8 @@ void screen_init(void)
     ssd1306_set_scan_direction_fwd(&display, false);
     ssd1306_set_segment_remapping_enabled(&display, true);
     sdk_os_timer_setfn(&screen_timer, screen_timer_fn, NULL);
+    printf("%s: end, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
+
 }
 
 // LCD ssd1306
@@ -360,6 +368,9 @@ void display_draw_pixel_2x2(uint8_t x, uint8_t y, bool white) {
 }
 
 void display_draw_qrcode(QRCode *qrcode, uint8_t x, uint8_t y, uint8_t size) {
+
+    printf("%s: Start, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
+
     void (*draw_pixel)(uint8_t x, uint8_t y, bool white) = display_draw_pixel;
     if (size >= 2) {
         draw_pixel = display_draw_pixel_2x2;
@@ -390,6 +401,9 @@ void display_draw_qrcode(QRCode *qrcode, uint8_t x, uint8_t y, uint8_t size) {
     for (uint8_t i = 0; i < qrcode->size; i++, cx+=size)
         draw_pixel(cx, cy, 1);
     draw_pixel(cx, cy, 1);
+
+    printf("%s: End, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
+
 }
 
 bool qrcode_shown = false;
@@ -397,6 +411,8 @@ void qrcode_show(homekit_server_config_t *config) {
     char setupURI[20];
     homekit_get_setup_uri(config, setupURI, sizeof(setupURI));
 
+    printf("%s: Start, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
+    
     printf ("setupURI: %s, password %s, setupId: %s\n",setupURI, config->password, config->setupId);
     QRCode qrcode;
     
@@ -415,9 +431,15 @@ void qrcode_show(homekit_server_config_t *config) {
     
     free(qrcodeBytes);
     qrcode_shown = true;
+    printf("%s: End, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
+
 }
 
+
 void qrcode_hide() {
+
+    printf("%s: Start, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
+
     if (!qrcode_shown)
         return;
     
@@ -425,6 +447,8 @@ void qrcode_hide() {
     switch_screen_on ( false, 0);
     
     qrcode_shown = false;
+    printf("%s: End, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
+
 }
 
 
@@ -435,7 +459,7 @@ void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *contex
 
     process_setting_update();
     switch_screen_on (true, SCREEN_DELAY);
-
+    sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
 }
 
 
@@ -451,7 +475,7 @@ void up_button_callback(uint8_t gpio, void* args, const uint8_t param) {
         if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 0.5))
         {
             target_temperature.value.float_value += 0.5;
-            save_characteristic_to_flash (&target_temperature, target_temperature.value);
+            sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&target_temperature, target_temperature.value);
         }
     }
@@ -470,7 +494,7 @@ void down_button_callback(uint8_t gpio, void* args, const uint8_t param) {
         if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 0.5))
         {
             target_temperature.value.float_value -= 0.5;
-            save_characteristic_to_flash (&target_temperature, target_temperature.value);
+            sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&target_temperature, target_temperature.value);
         }
     }
@@ -479,12 +503,13 @@ void down_button_callback(uint8_t gpio, void* args, const uint8_t param) {
 
 void process_setting_update() {
 
-    uint8_t state = target_state.value.int_value;
+    printf("%s: Start - Free Heap %d\n",__func__,  xPortGetFreeHeapSize());
+           uint8_t state = target_state.value.int_value;
     if ((state == 1 && current_temperature.value.float_value < target_temperature.value.float_value) ||
             (state == 3 && current_temperature.value.float_value < heating_threshold.value.float_value)) {
         if (current_state.value.int_value != 1) {
             current_state.value = HOMEKIT_UINT8(1);
-            save_characteristic_to_flash (&current_state, current_state.value);
+            sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&current_state, current_state.value);
             switch_screen_on (true, SCREEN_DELAY);
         }
@@ -492,18 +517,19 @@ void process_setting_update() {
             (state == 3 && current_temperature.value.float_value > cooling_threshold.value.float_value)) {
         if (current_state.value.int_value != 2) {
             current_state.value = HOMEKIT_UINT8(2);
-            save_characteristic_to_flash (&current_state, current_state.value);
+            sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&current_state, current_state.value);
             switch_screen_on (true, SCREEN_DELAY);
         }
     } else {
         if (current_state.value.int_value != 0) {
             current_state.value = HOMEKIT_UINT8(0);
-            save_characteristic_to_flash (&current_state, current_state.value);
+            sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&current_state, current_state.value);
             switch_screen_on (true, SCREEN_DELAY);
         }
     }
+    printf("%s: End - Free Heap %d\n",__func__,  xPortGetFreeHeapSize());
 }
 
 
@@ -511,34 +537,39 @@ void temperature_sensor_task(void *_args) {
     
     gpio_set_pullup(TEMPERATURE_SENSOR_PIN, false, false);
     
-    float humidity_value, temperature_value, temp_diff;
+    float humidity_value, temperature_value, temp_diff, humidity_diff;
+    bool success = false;
+    
     while (1) {
-        bool success = dht_read_float_data(
+        success = dht_read_float_data(
                                            DHT_TYPE_DHT22, TEMPERATURE_SENSOR_PIN,
                                            &humidity_value, &temperature_value
                                            );
         
+        /*uxTaskGetStackHighWaterMark returns a number in bytes, stack is created in words, so device by 4 to get nujber of words left on stack */
+        
         if (success) {
-            printf("Got readings: temperature %g, humidity %g\n", temperature_value, humidity_value);
-            temp_diff = current_temperature.value.float_value - temperature_value;
-            if (temperature_value >= current_temperature.min_value[0] && temperature_value <= current_temperature.max_value[0])
+            printf("%s: Got readings: temperature %g, humidity %g, Stack Words left: %lu\n", __func__, temperature_value, humidity_value,  uxTaskGetStackHighWaterMark(NULL)/4);
+            temp_diff = abs (current_temperature.value.float_value - temperature_value);
+            humidity_diff = abs (current_humidity.value.float_value - humidity_value);
+            if (temperature_value >= current_temperature.min_value[0] && temperature_value <= current_temperature.max_value[0] && temp_diff >= TEMP_DIFF_NOTIFY_TRIGGER)
             {
+                printf ("%s: Notify Temperature updated\n", __func__);
                 current_temperature.value = HOMEKIT_FLOAT(temperature_value);
                 homekit_characteristic_notify(&current_temperature, current_temperature.value);
             }
-            if (humidity_value >= current_humidity.min_value[0] && humidity_value <= current_humidity.max_value[0])
+            if (humidity_value >= current_humidity.min_value[0] && humidity_value <= current_humidity.max_value[0] && humidity_diff >= HUMIDITY_DIFF_TRIGGER_VALUE)
             {
-                
+                printf ("%s: Notify Humidity updated\n", __func__);
                 current_humidity.value = HOMEKIT_FLOAT(humidity_value);
-                
                 homekit_characteristic_notify(&current_humidity, current_humidity.value);
             }
             
-            if (abs(temp_diff) > TEMP_DIFF_TRIGGER) {
+            if (temp_diff > TEMP_DIFF_TRIGGER) {
                 process_setting_update();
             }
         } else {
-            printf("Couldnt read data from sensor\n");
+            printf("%s: Couldnt read data from sensor\n", __func__);
             led_code(LED_GPIO, SENSOR_ERROR);
         }
         homekit_characteristic_notify(&current_state, current_state.value);
@@ -571,6 +602,9 @@ homekit_accessory_t *accessories[] = {
             &ota_trigger,
             &wifi_reset,
             &wifi_check_interval,
+            &task_stats,
+            &ota_beta,
+            &lcm_beta,
             NULL
         }),
         NULL
@@ -581,10 +615,14 @@ homekit_accessory_t *accessories[] = {
 
 void thermostat_init() {
     
+    printf("%s: Start, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+
     while (ssd1306_init(&display) != 0) {
         printf("%s: failed to init SSD1306 lcd\n", __func__);
         vTaskDelay(SECOND_TICKS);
     }
+    printf("%s: Display initailised, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+    
     
     adv_button_set_evaluate_delay(10);
     
@@ -597,35 +635,78 @@ void thermostat_init() {
   
     adv_button_create(RESET_BUTTON_GPIO, true, false);
     adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, VERYLONGPRESS_TYPE, NULL, 0);
-    
-    xTaskCreate(temperature_sensor_task, "Thermostat", 256, NULL, 2, NULL);
 
+    printf("%s: Buttons Created, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+
+    xTaskCreate(temperature_sensor_task, "Thermostat", 256, NULL, tskIDLE_PRIORITY+1, NULL);
+
+    printf("%s: Temperaure Sensor Task Created, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+    
     gpio_enable(LED_GPIO, GPIO_OUTPUT);
     
-    xTaskCreate(ssd1306_task, "ssd1306_task", 512, NULL, 2, NULL);
+    xTaskCreate(ssd1306_task, "ssd1306_task", 384, NULL, tskIDLE_PRIORITY+1, NULL);
     sdk_os_timer_arm(&screen_timer, SCREEN_DELAY, 0);
+
+    printf("%s: Screen Taks and Timer, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+
+    
+    printf("%s: End, Freep Heap=%d\n\n", __func__, xPortGetFreeHeapSize());
 
 }
 
 
 void accessory_init (void ){
     /* initalise anything you don't want started until wifi and pairing is confirmed */
+    printf("%s: Start, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+
     qrcode_hide();
     thermostat_init();
+
+    printf("%s: End, Freep Heap=%d\n\n", __func__, xPortGetFreeHeapSize());
+
 }
 
 void accessory_init_not_paired (void) {
     /* initalise anything you don't want started until wifi and homekit imitialisation is confirmed, but not paired */
+    printf("%s: Start, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+
     qrcode_show(&config);
+
+    printf("%s: End, Freep Heap=%d\n\n", __func__, xPortGetFreeHeapSize());
+
 }
 
+
+void recover_from_reset (int reason){
+    /* called if we restarted abnormally */
+    printf("%s: Reason %d, Freep Heap=%d\n", __func__, reason, xPortGetFreeHeapSize());
+
+    load_characteristic_from_flash(&target_temperature);
+    load_characteristic_from_flash(&current_state);
+
+    printf("%s: End, Freep Heap=%d\n\n", __func__, xPortGetFreeHeapSize());
+
+}
+
+
+void save_characteristics ( ){
+    /* called by save timer*/
+    printf ("%s:\n", __func__);
+    save_characteristic_to_flash (&target_temperature, target_temperature.value);
+    save_characteristic_to_flash (&current_state, current_state.value);
+    save_characteristic_to_flash(&wifi_check_interval, wifi_check_interval.value);
+}
 
 
 void load_settings_from_flash (){
     
-    printf("load_settings_from_flash - load setting from flash\n");
+    printf("%s: Start, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
+
     load_characteristic_from_flash (&target_state);
     load_characteristic_from_flash (&target_temperature);
+
+    printf("%s: End, Freep Heap=%d\n\n", __func__, xPortGetFreeHeapSize());
+
 }
 
 

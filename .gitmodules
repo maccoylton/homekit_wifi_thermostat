@@ -1,9 +1,6 @@
 [submodule "components/esp-cjson"]
 	path = components/esp-cjson
 	url = https://github.com/maximkulkin/esp-cjson.git
-[submodule "components/esp-homekit"]
-	path = components/esp-homekit
-	url = https://github.com/maximkulkin/esp-homekit.git
 [submodule "components/esp-wolfssl"]
 	path = components/esp-wolfssl
 	url = https://github.com/maximkulkin/esp-wolfssl.git
@@ -13,9 +10,6 @@
 [submodule "components/esp-qrcode"]
 	path = components/esp-qrcode
 	url = https://github.com/maximkulkin/esp-qrcode.git
-[submodule "components/esp-button"]
-	path = components/esp-button
-	url = https://github.com/maximkulkin/esp-button.git
 [submodule "components/esp-adv-button"]
 	path = components/esp-adv-button
 	url = https://github.com/RavenSystem/esp-adv-button.git
@@ -25,3 +19,6 @@
 [submodule "components/esp-wifi-config"]
 	path = components/esp-wifi-config
 	url = https://github.com/maximkulkin/esp-wifi-config
+[submodule "components/esp-homekit"]
+	path = components/esp-homekit
+	url = https://github.com/maccoylton/esp-homekit
