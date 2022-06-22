@@ -134,7 +134,7 @@ static enum screen_display screen;
 
 // I2C
 
-ETSTimer screen_timer;
+ETSTimer screen_off_timer;
 
 #include <ota-api.h>
 homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
@@ -143,6 +143,7 @@ homekit_characteristic_t wifi_check_interval   = HOMEKIT_CHARACTERISTIC_(CUSTOM_
 homekit_characteristic_t task_stats   = HOMEKIT_CHARACTERISTIC_(CUSTOM_TASK_STATS, true , .setter=task_stats_set);
 homekit_characteristic_t ota_beta     = HOMEKIT_CHARACTERISTIC_(CUSTOM_OTA_BETA, false, .setter=ota_beta_set);
 homekit_characteristic_t lcm_beta    = HOMEKIT_CHARACTERISTIC_(CUSTOM_LCM_BETA, false, .setter=lcm_beta_set);
+homekit_characteristic_t preserve_state   = HOMEKIT_CHARACTERISTIC_(CUSTOM_PRESERVE_STATE, true, .setter=preserve_state_set);
 
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
 homekit_characteristic_t name         = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
@@ -152,13 +153,13 @@ homekit_characteristic_t model        = HOMEKIT_CHARACTERISTIC_(MODEL,         D
 homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION,  FW_VERSION);
 
 
-void switch_screen_on (bool screen_state, int time_to_be_on);
+void switch_screen_on (int time_to_be_on);
 void display_logo ();
 
 void thermostat_identify_task(void *_args) {
 
     led_code(LED_GPIO, IDENTIFY_ACCESSORY);
-    switch_screen_on (true,10*SECOND_TICKS);
+    switch_screen_on (10*SECOND_TICKS);
     display_logo ();
     vTaskDelete(NULL);
 }
@@ -229,7 +230,7 @@ static void ssd1306_task(void *pvParameters)
                     goto error_loop;
             }
             
-            sprintf(target_temp_string, "%g", (float)target_temperature.value.float_value);
+            sprintf(target_temp_string, "%2.1f", (float)target_temperature.value.float_value);
             switch( (int)current_state.value.int_value)
             {
                 case 0:
@@ -256,8 +257,8 @@ static void ssd1306_task(void *pvParameters)
                 printf("Error printing mode\n");
             }
             
-            sprintf(temperature_string, "%g", (float)current_temperature.value.float_value);
-            sprintf(humidity_string, "%g", (float)current_humidity.value.float_value);
+            sprintf(temperature_string, "%2.1f", (float)current_temperature.value.float_value);
+            sprintf(humidity_string, "%2.1f", (float)current_humidity.value.float_value);
             if (ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_BOLD_8X14_ISO8859_1], 30, 41 , temperature_string, OLED_COLOR_WHITE, OLED_COLOR_BLACK) < 1){
                 printf("Error printing temperature\n");
             }
@@ -282,44 +283,27 @@ error_loop:
     }
 }
 
-
-void switch_screen_on ( bool screen_state, int time_to_be_on){
-
+void switch_screen_off (){
     
-    if (screen_on ==true && screen_state ==true){
-        if (time_to_be_on >0 ){
-            /* if its already on and the time to be on > 0 then reset the timer, otherwise do nothing */
-            sdk_os_timer_disarm (&screen_timer );
-            sdk_os_timer_arm(&screen_timer, time_to_be_on, 0);
-        }
-    }
-    
-    if ( screen_on == true && screen_state == false){
-        /* if its on and we called for off, switch it off and disable the timer */
-        screen_on = false;
-        ssd1306_display_on(&display, screen_on);
-        sdk_os_timer_disarm (&screen_timer );
-    }
-    
-    if ( screen_on == false && screen_state == true){
-        /* if it off and we called for it to be on, switch it on */
-        screen_on = screen_state;
-        ssd1306_display_on(&display, screen_on);
-        if (time_to_be_on > 0){
-            /* if the timer is > 0m, set the timer */
-            sdk_os_timer_arm(&screen_timer, time_to_be_on, 0);
-            printf("Screen off timer set to %d\n", time_to_be_on);
-        }
-    }
-    
-    printf("Screen_on screen on state: %d\n", screen_state);
-
+    screen_on = false;
+    ssd1306_display_on(&display, false);
+    sdk_os_timer_disarm (&screen_off_timer ); /* esnuer the screen off timer is disabled */
+    printf("Screen turned off and off timer disbaled\n");
 }
 
 
-void screen_timer_fn (){
+void switch_screen_on (int time_to_be_on){
     
-    switch_screen_on (false , 0);
+    screen_on = true;
+    ssd1306_display_on(&display, true);
+    sdk_os_timer_arm(&screen_off_timer, time_to_be_on, 0);
+    printf("Screen turned on and off timer set to %d\n", time_to_be_on);
+}
+
+
+void screen_off_timer_fn (){
+
+    switch_screen_off ();
     printf("Screen Off timer fucntion\n");
 }
 
@@ -343,7 +327,7 @@ void screen_init(void)
     ssd1306_set_whole_display_lighting(&display, false);
     ssd1306_set_scan_direction_fwd(&display, false);
     ssd1306_set_segment_remapping_enabled(&display, true);
-    sdk_os_timer_setfn(&screen_timer, screen_timer_fn, NULL);
+    sdk_os_timer_setfn(&screen_off_timer, screen_off_timer_fn, NULL);
     printf("%s: end, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
 
 }
@@ -421,7 +405,7 @@ void qrcode_show(homekit_server_config_t *config) {
     
     qrcode_print(&qrcode);  // print on console
     
-    switch_screen_on (true,0);
+    switch_screen_on (0);
     
     ssd1306_fill_rectangle(&display, display_buffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, OLED_COLOR_BLACK);
     ssd1306_draw_string(&display, display_buffer, font_builtin_fonts[FONT_FACE_TERMINUS_6X12_ISO8859_1], 0, 26, config->password, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
@@ -444,7 +428,7 @@ void qrcode_hide() {
         return;
     
     ssd1306_clear_screen(&display);
-    switch_screen_on ( false, 0);
+    switch_screen_off();
     
     qrcode_shown = false;
     printf("%s: End, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
@@ -458,45 +442,32 @@ void qrcode_hide() {
 void on_update(homekit_characteristic_t *ch, homekit_value_t value, void *context) {
 
     process_setting_update();
-    switch_screen_on (true, SCREEN_DELAY);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
 }
 
 
 void up_button_callback(uint8_t gpio, void* args, const uint8_t param) {
     
-    if  (screen_on == false){
-        /* if the screen is currently off the just switch it on */
-        switch_screen_on (true, SCREEN_DELAY);
-    } else {
-        /* the screen is on and the button press is to updated the value */
-        switch_screen_on (true, SCREEN_DELAY); /* extend the screen delay */
-        printf("Button UP single press\n");
-        if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 0.5))
-        {
-            target_temperature.value.float_value += 0.5;
-            sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
-            homekit_characteristic_notify(&target_temperature, target_temperature.value);
-        }
+    switch_screen_on (SCREEN_DELAY); /* ensure the screen is on */
+    printf("Button UP single press\n");
+    if (target_temperature.value.float_value <= (target_temperature.max_value[0] - 0.5))
+    {
+        target_temperature.value.float_value += 0.5;
+        sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
+        homekit_characteristic_notify(&target_temperature, target_temperature.value);
     }
 }
 
 
 void down_button_callback(uint8_t gpio, void* args, const uint8_t param) {
     
-    if (screen_on == false){
-        /* if the screen is currently off the just switch it on */
-        switch_screen_on (true, SCREEN_DELAY);
-    } else {
-        /* the screen is on and the button press is to updated the value */
-        switch_screen_on (true, SCREEN_DELAY); /* extend the screen delay */
-        printf("Button DOWN single press\n");
-        if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 0.5))
-        {
-            target_temperature.value.float_value -= 0.5;
-            sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
-            homekit_characteristic_notify(&target_temperature, target_temperature.value);
-        }
+    switch_screen_on (SCREEN_DELAY); /* ensure the screen is on */
+    printf("Button DOWN single press\n");
+    if (target_temperature.value.float_value >= (target_temperature.min_value[0] + 0.5))
+    {
+        target_temperature.value.float_value -= 0.5;
+        sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
+        homekit_characteristic_notify(&target_temperature, target_temperature.value);
     }
 }
 
@@ -511,7 +482,7 @@ void process_setting_update() {
             current_state.value = HOMEKIT_UINT8(1);
             sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&current_state, current_state.value);
-            switch_screen_on (true, SCREEN_DELAY);
+            switch_screen_on (SCREEN_DELAY);
         }
     } else if ((state == 2 && current_temperature.value.float_value > target_temperature.value.float_value) ||
             (state == 3 && current_temperature.value.float_value > cooling_threshold.value.float_value)) {
@@ -519,14 +490,14 @@ void process_setting_update() {
             current_state.value = HOMEKIT_UINT8(2);
             sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&current_state, current_state.value);
-            switch_screen_on (true, SCREEN_DELAY);
+            switch_screen_on (SCREEN_DELAY);
         }
     } else {
         if (current_state.value.int_value != 0) {
             current_state.value = HOMEKIT_UINT8(0);
             sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
             homekit_characteristic_notify(&current_state, current_state.value);
-            switch_screen_on (true, SCREEN_DELAY);
+            switch_screen_on (SCREEN_DELAY);
         }
     }
     printf("%s: End - Free Heap %d\n",__func__,  xPortGetFreeHeapSize());
@@ -549,7 +520,7 @@ void temperature_sensor_task(void *_args) {
         /*uxTaskGetStackHighWaterMark returns a number in bytes, stack is created in words, so device by 4 to get nujber of words left on stack */
         
         if (success) {
-            printf("%s: Got readings: temperature %g, humidity %g, Stack Words left: %lu\n", __func__, temperature_value, humidity_value,  uxTaskGetStackHighWaterMark(NULL)/4);
+            printf("%s: Got readings: temperature %2.1f, humidity %2.1f, Stack Words left: %lu\n", __func__, temperature_value, humidity_value,  uxTaskGetStackHighWaterMark(NULL)/4);
             temp_diff = abs (current_temperature.value.float_value - temperature_value);
             humidity_diff = abs (current_humidity.value.float_value - humidity_value);
             if (temperature_value >= current_temperature.min_value[0] && temperature_value <= current_temperature.max_value[0] && temp_diff >= TEMP_DIFF_NOTIFY_TRIGGER)
@@ -605,6 +576,7 @@ homekit_accessory_t *accessories[] = {
             &task_stats,
             &ota_beta,
             &lcm_beta,
+            &preserve_state,
             NULL
         }),
         NULL
@@ -645,7 +617,7 @@ void thermostat_init() {
     gpio_enable(LED_GPIO, GPIO_OUTPUT);
     
     xTaskCreate(ssd1306_task, "ssd1306_task", 384, NULL, tskIDLE_PRIORITY+1, NULL);
-    sdk_os_timer_arm(&screen_timer, SCREEN_DELAY, 0);
+    sdk_os_timer_arm(&screen_off_timer, SCREEN_DELAY, 0);
 
     printf("%s: Screen Taks and Timer, Freep Heap=%d\n", __func__, xPortGetFreeHeapSize());
 
@@ -692,9 +664,15 @@ void recover_from_reset (int reason){
 void save_characteristics ( ){
     /* called by save timer*/
     printf ("%s:\n", __func__);
-    save_characteristic_to_flash (&target_temperature, target_temperature.value);
-    save_characteristic_to_flash (&current_state, current_state.value);
-    save_characteristic_to_flash(&wifi_check_interval, wifi_check_interval.value);
+    save_characteristic_to_flash(&preserve_state, preserve_state.value);
+    if ( preserve_state.value.bool_value == true){
+        printf ("%s:Preserving state\n", __func__);
+        save_characteristic_to_flash (&target_temperature, target_temperature.value);
+        save_characteristic_to_flash (&current_state, current_state.value);
+        save_characteristic_to_flash(&wifi_check_interval, wifi_check_interval.value);
+    } else {
+        printf ("%s:Not preserving state\n", __func__);
+    }
 }
 
 

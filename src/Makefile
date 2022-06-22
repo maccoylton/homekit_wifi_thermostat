@@ -4,21 +4,21 @@ EXTRA_COMPONENTS = \
 	extras/dht \
 	extras/http-parser \
 	extras/rboot-ota \
-    extras/dhcpserver \
+        extras/dhcpserver \
 	extras/ssd1306 \
 	extras/fonts \
 	extras/i2c \
 	$(abspath ../components/esp-wolfssl) \
 	$(abspath ../components/esp-cjson) \
 	$(abspath ../components/esp-homekit)\
-    $(abspath ../components/esp-wifi-config)\
-    $(abspath ../components/UDPlogger)\
+        $(abspath ../components/esp-wifi-config)\
+        $(abspath ../components/UDPlogger)\
 	$(abspath ../components/esp-qrcode)\
 	$(abspath ../components/esp-adv-button)\
 	$(abspath ../components/esp-homekit-common-functions/led_codes)\
 	$(abspath ../components/esp-homekit-common-functions/ota)\
-    $(abspath ../components/esp-homekit-common-functions/custom_characteristics)\
-    $(abspath ../components/esp-homekit-common-functions/shared_functions)
+        $(abspath ../components/esp-homekit-common-functions/custom_characteristics)\
+        $(abspath ../components/esp-homekit-common-functions/shared_functions)
 
 
 FONTS_TERMINUS_BOLD_8X14_ISO8859_1 = 1
@@ -33,8 +33,9 @@ HOMEKIT_MAX_CLIENTS = 16
 HOMEKIT_SMALL = 0
 HOMEKIT_SPI_FLASH_BASE_ADDR ?= 0x8c000
 
-EXTRA_CFLAGS += -I../.. -DHOMEKIT_SHORT_APPLE_UUIDS -DFONTS_TERMINUS_BOLD_8X14_ISO8859_1 -DFONTS_TERMINUS_BOLD_14X28_ISO8859_1 -DFONTS_TERMINUS_6X12_ISO8859_1
-EXTRA_CFLAGS += -DHOMEKIT_DEBUG
+EXTRA_CFLAGS += -Os -I../.. -DHOMEKIT_SHORT_APPLE_UUIDS -DFONTS_TERMINUS_BOLD_8X14_ISO8859_1 -DFONTS_TERMINUS_BOLD_14X28_ISO8859_1 -DFONTS_TERMINUS_6X12_ISO8859_1
+#EXTRA_CFLAGS += -DHOMEKIT_DEBUG
+#EXTRA_CFLAGS += -DHOMEKIT_MDNS_DEBUG
 EXTRA_CFLAGS += -DHOMEKIT_OVERCLOCK_PAIR_VERIFY
 EXTRA_CFLAGS += -DHOMEKIT_OVERCLOCK_PAIR_SETUP
 EXTRA_CFLAGS += -DUDPLOG_PRINTF_TO_UDP
@@ -44,7 +45,7 @@ EXTRA_CFLAGS += -DconfigUSE_TRACE_FACILITY
 include $(SDK_PATH)/common.mk
 
 signature: 
-	$(shell /usr/local/opt/openssl/bin/openssl   sha384 -binary -out firmware/main.bin.sig firmware/main.bin)
+	$(shell openssl   sha384 -binary -out firmware/main.bin.sig firmware/main.bin)
 	$(shell printf "%08x" `cat firmware/main.bin | wc -c`| xxd -r -p >>firmware/main.bin.sig)
  
 monitor:
