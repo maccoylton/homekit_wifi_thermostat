@@ -153,7 +153,7 @@ homekit_characteristic_t model        = HOMEKIT_CHARACTERISTIC_(MODEL,         D
 homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION,  FW_VERSION);
 
 
-void switch_screen_on (int time_to_be_on);
+void switch_screen_on (uint32_t time_to_be_on);
 void display_logo ();
 
 void thermostat_identify_task(void *_args) {
@@ -285,6 +285,7 @@ error_loop:
 
 void switch_screen_off (){
     
+    printf("%s:", __func__);
     screen_on = false;
     ssd1306_display_on(&display, false);
     sdk_os_timer_disarm (&screen_off_timer ); /* esnuer the screen off timer is disabled */
@@ -292,11 +293,14 @@ void switch_screen_off (){
 }
 
 
-void switch_screen_on (int time_to_be_on){
+void switch_screen_on (uint32_t time_to_be_on){
     
+    printf("%s:", __func__);
     screen_on = true;
     ssd1306_display_on(&display, true);
-    sdk_os_timer_arm(&screen_off_timer, time_to_be_on, 0);
+    if (time_to_be_on > 0 ) { /* we call this with 0 when we are showing the homekit qr code, so no timeout */
+        sdk_os_timer_arm(&screen_off_timer, time_to_be_on, 0);
+    }
     printf("Screen turned on and off timer set to %d\n", time_to_be_on);
 }
 
@@ -327,7 +331,7 @@ void screen_init(void)
     ssd1306_set_whole_display_lighting(&display, false);
     ssd1306_set_scan_direction_fwd(&display, false);
     ssd1306_set_segment_remapping_enabled(&display, true);
-    sdk_os_timer_setfn(&screen_off_timer, screen_off_timer_fn, NULL);
+ //   sdk_os_timer_setfn(&screen_off_timer, screen_off_timer_fn, NULL);
     printf("%s: end, Free Heap %d\n", __func__, xPortGetFreeHeapSize());
 
 }
@@ -696,6 +700,8 @@ homekit_server_config_t config = {
 };
 
 void user_init(void) {
+
+    sdk_os_timer_setfn(&screen_off_timer, screen_off_timer_fn, NULL);
 
     standard_init (&name, &manufacturer, &model, &serial, &revision);
     
